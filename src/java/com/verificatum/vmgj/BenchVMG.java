@@ -116,6 +116,51 @@ public final class BenchVMG {
     }
 
     /**
+     * Times modular multiplication.
+     *
+     * @param bitLength Number of bits of integers in the operation
+     * timed.
+     * @param milliSecs Duration of the timing.
+     * @return Number of modular multiplications performed.
+     */
+    protected static long time_modmul(final int bitLength,
+                                      final long milliSecs) {
+
+        final SecureRandom random = new SecureRandom();
+
+        final int len = 100;
+
+        // Generate random modulus.
+        BigInteger modulus = new BigInteger(bitLength, random);
+        modulus = modulus.setBit(bitLength - 1);
+
+        final BigInteger[] lefts = new BigInteger[len];
+        final BigInteger[] rights = new BigInteger[len];
+
+        for (int l = 0; l < len; l++) {
+            lefts[l] = new BigInteger(bitLength, random);
+            lefts[l] = lefts[l].setBit(bitLength - 1);
+
+            rights[l] = new BigInteger(bitLength, random);
+            rights[l] = rights[l].setBit(bitLength - 1);
+        }
+
+        // Time optimized code.
+        final long t = System.currentTimeMillis();
+        long i = 0;
+        int l = 0;
+        while (!done(t, milliSecs)) {
+
+            VMG.modmul(lefts[l], rights[l], modulus);
+
+            l = (l + 1) % len;
+
+            i++;
+        }
+        return i;
+    }
+
+    /**
      * Times simultaneous exponentiation.
      *
      * @param bitLength Number of bits of integers in the operation
@@ -219,6 +264,8 @@ public final class BenchVMG {
 
         System.out.println(String.format("%12d exponentiations",
                                          time_powm(bitLength, milliSecs)));
+        System.out.println(String.format("%12d modular multiplications",
+                         time_modmul(bitLength, milliSecs)));
         System.out.println(String.format("%12d simultaneous exponentiations",
                                          time_spowm(bitLength, milliSecs)));
         System.out.println(String.format("%12d fixed-basis exponentiations",

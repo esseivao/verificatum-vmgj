@@ -99,6 +99,32 @@ public final class TestVMG {
     }
 
     /**
+     * Tests modular multiplication.
+     *
+     * @param bitLength Number of bits of integers.
+     * @param milliSecs Duration of the timing.
+     */
+    protected static void test_modmul(final int bitLength,
+                                      final long milliSecs) {
+
+        final SecureRandom random = new SecureRandom();
+
+        // Test optimized code.
+        final long t = System.currentTimeMillis();
+        while (!done(t, milliSecs)) {
+
+            final BigInteger modulus = new BigInteger(bitLength, random);
+            final BigInteger a = new BigInteger(bitLength, random);
+            final BigInteger b = new BigInteger(bitLength, random);
+
+            final BigInteger vmg = VMG.modmul(a, b, modulus);
+            final BigInteger java = a.multiply(b).mod(modulus);
+
+            assert vmg.equals(java) : "Modular multiplication failed!";
+        }
+    }
+
+    /**
      * Test simultaneous exponentiation.
      *
      * @param bitLength Number of bits of integers.
@@ -374,6 +400,8 @@ public final class TestVMG {
 
         System.out.println("powm (plain modular exponentiation)");
         test_powm(bitLength, milliSecs);
+        System.out.println("modmul (modular multiplication)");
+        test_modmul(bitLength, milliSecs);
         System.out.println("spowm (simultaneous modular exponentiation)");
         test_spowm(bitLength, milliSecs);
         System.out.println("fpowm (fixed-basis modular exponentiation)");

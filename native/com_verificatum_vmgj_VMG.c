@@ -90,6 +90,46 @@ extern "C" {
 
   /*
    * Class:     com_verificatum_vmgj_VMG
+   * Method:    modmul
+   * Signature: ([B[B[B)[B
+   */
+  JNIEXPORT jbyteArray JNICALL Java_com_verificatum_vmgj_VMG_modmul
+  (JNIEnv *env, jclass clazz, jbyteArray javaA, jbyteArray javaB,
+   jbyteArray javaModulus)
+  {
+    mpz_t a;
+    mpz_t b;
+    mpz_t modulus;
+    mpz_t result;
+    jbyteArray javaResult;
+
+    VMGJ_UNUSED(clazz);
+
+    /* Convert inputs to GMP integers. */
+    jbyteArray_to_mpz_t(env, &a, javaA);
+    jbyteArray_to_mpz_t(env, &b, javaB);
+    jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+
+    /* Compute (a * b) mod modulus. */
+    mpz_init(result);
+    mpz_mul(result, a, b);
+    mpz_mod(result, result, modulus);
+
+    /* Convert result back to Java byte[]. */
+    mpz_t_to_jbyteArray(env, &javaResult, result);
+
+    /* Cleanup. */
+    mpz_clear(result);
+    mpz_clear(modulus);
+    mpz_clear(b);
+    mpz_clear(a);
+
+    return javaResult;
+  }
+
+
+  /*
+   * Class:     com_verificatum_vmgj_VMG
    * Method:    spowm
    * Signature: ([[B[[B[B)[B
    */
