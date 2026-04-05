@@ -37,7 +37,8 @@ libvmgj_la_LIBADD = -lgmp -lgmpmee
 
 # We use -release to glue the native code and Java code together. We
 # are aware that this violate common practice for library versioning.
-libvmgj_la_LDFLAGS = -release $(VERSION)
+# -no-undefined is needed for Windows DLL builds with libtool.
+libvmgj_la_LDFLAGS = -release $(VERSION) -no-undefined
 
 # This is generated from a Java file and copied to this directory by
 # the parent directory.
