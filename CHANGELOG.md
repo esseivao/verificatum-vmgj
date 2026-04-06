@@ -15,6 +15,11 @@ See [README.md](README.md) for build and installation instructions.
   `FpowmTab` precomputation to reject oversized fixed-base tables
   before entering native code.
 
+- Tightened fixed-base precomputation safeguards to reject
+  `blockWidth > 24`, reject requests larger than currently free
+  physical memory, and cap live table reservations to at most 50% of
+  detected total physical memory (or stricter configured limits).
+
 - Made `FpowmTab` implement `AutoCloseable` and updated the internal
   benchmark/test callers to release native fixed-base tables promptly.
 

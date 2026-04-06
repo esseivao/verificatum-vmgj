@@ -27,6 +27,8 @@
 
 package com.verificatum.vmgj;
 
+import java.lang.management.ManagementFactory;
+import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -71,7 +73,19 @@ public class FpowmTab implements AutoCloseable {
     /**
      * Upper bound needed to safely evaluate 2^blockWidth using a long.
      */
-    private static final int MAX_SUPPORTED_BLOCK_WIDTH = 30;
+    private static final int MAX_SUPPORTED_BLOCK_WIDTH = 24;
+
+    /**
+     * Numerator of the fraction used for the default runtime total
+     * memory cap.
+     */
+    private static final long RUNTIME_TOTAL_CAP_NUMERATOR = 1L;
+
+    /**
+     * Denominator of the fraction used for the default runtime total
+     * memory cap.
+     */
+    private static final long RUNTIME_TOTAL_CAP_DENOMINATOR = 2L;
 
     /**
      * Conservative native bookkeeping overhead per table.
@@ -304,19 +318,32 @@ public class FpowmTab implements AutoCloseable {
                                                + "=<bytes>");
         }
 
+        final long freePhysicalMemory = detectPhysicalMemoryBytes("getFreePhysicalMemorySize");
+        if (freePhysicalMemory > 0 && estimatedBytes > freePhysicalMemory) {
+            throw new IllegalStateException("Estimated fixed-base table size "
+                                            + estimatedBytes
+                                            + " bytes exceeds currently free physical memory "
+                                            + freePhysicalMemory
+                                            + " bytes");
+        }
+
         final long maxTotalBytes =
             getConfiguredLimit(MAX_TOTAL_BYTES_PROPERTY,
                                DEFAULT_MAX_TOTAL_BYTES);
+        final long runtimeTotalCap = getRuntimeTotalCapBytes();
+        final long effectiveMaxTotalBytes =
+            runtimeTotalCap > 0 ? Math.min(maxTotalBytes, runtimeTotalCap)
+            : maxTotalBytes;
 
         while (true) {
             final long reserved = RESERVED_TABLE_BYTES.get();
             final long updated = checkedAdd(reserved, estimatedBytes);
 
-            if (updated > maxTotalBytes) {
+            if (updated > effectiveMaxTotalBytes) {
                 throw new IllegalStateException("Estimated total size of live fixed-base tables "
                                                 + updated
                                                 + " bytes exceeds limit "
-                                                + maxTotalBytes
+                                                + effectiveMaxTotalBytes
                                                 + " bytes. Free unused tables or set -D"
                                                 + MAX_TOTAL_BYTES_PROPERTY
                                                 + "=<bytes>");
@@ -364,6 +391,54 @@ public class FpowmTab implements AutoCloseable {
                                                + propertyName
                                                + " as a byte count", nfe);
         }
+    }
+
+    /**
+     * Returns the runtime cap based on the detected total physical
+     * memory.
+     *
+     * @return Runtime total cap in bytes, or {@code 0} if the total
+     * physical memory is unavailable.
+     */
+    private static long getRuntimeTotalCapBytes() {
+        final long totalPhysicalMemory = detectPhysicalMemoryBytes("getTotalPhysicalMemorySize");
+
+        if (totalPhysicalMemory <= 0) {
+            return 0;
+        }
+
+        return totalPhysicalMemory
+            * RUNTIME_TOTAL_CAP_NUMERATOR
+            / RUNTIME_TOTAL_CAP_DENOMINATOR;
+    }
+
+    /**
+     * Detects a physical memory metric from the JVM operating-system
+     * management bean.
+     *
+     * @param methodName Name of the zero-argument method to invoke.
+     * @return Reported memory metric in bytes, or {@code -1} if not
+     * available.
+     */
+    private static long detectPhysicalMemoryBytes(final String methodName) {
+        try {
+            final Object osBean = ManagementFactory.getOperatingSystemMXBean();
+            final Method method = osBean.getClass().getMethod(methodName);
+            method.setAccessible(true);
+
+            final Object value = method.invoke(osBean);
+            if (value instanceof Long) {
+                final long memory = ((Long) value).longValue();
+                if (memory > 0) {
+                    return memory;
+                }
+            }
+        } catch (ReflectiveOperationException roe) {
+            return -1;
+        } catch (RuntimeException re) {
+            return -1;
+        }
+        return -1;
     }
 
     /**
