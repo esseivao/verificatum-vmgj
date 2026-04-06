@@ -42,6 +42,17 @@
 #define VMGJ_UNUSED(x) ((void)(x))
 #define VMGJ_JLONG_FROM_PTR(ptr) ((jlong)(intptr_t)(ptr))
 #define VMGJ_PTR_FROM_JLONG(type, value) ((type *)(intptr_t)(value))
+#define VMGJ_ASSERT_HANDLE(value, context)                                  \
+  do                                                                        \
+    {                                                                       \
+      if ((value) == 0)                                                     \
+        {                                                                   \
+          fprintf(stderr, "VMGJ fatal: invalid native handle in %s\n",    \
+                  (context));                                               \
+          abort();                                                          \
+        }                                                                   \
+    }                                                                       \
+  while (0)
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +76,7 @@ extern "C" {
     jbyteArray javaResult;
 
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaTablePtr, "fpowm");
 
     /* Translate jbyteArray-parameters to their corresponding GMP
        mpz_t-elements. */
@@ -266,6 +278,7 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaTablePtr, "fpowm_clear");
     gmpmee_fpowm_clear(*VMGJ_PTR_FROM_JLONG(gmpmee_fpowm_tab, javaTablePtr));
   }
 
@@ -335,6 +348,7 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_next_cand");
     gmpmee_millerrabin_next_cand(
       *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr));
   }
@@ -352,6 +366,7 @@ extern "C" {
     int res;
 
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_once");
 
     jbyteArray_to_mpz_t(env, &base, javaBase);
     res = gmpmee_millerrabin_once(
@@ -374,6 +389,7 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_clear");
     gmpmee_millerrabin_clear(
       *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr));
   }
@@ -392,6 +408,7 @@ extern "C" {
 
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_current");
 
     mpz_t_to_jbyteArray(env, &javaResult,
                         (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state,
@@ -441,6 +458,7 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_safe_next_cand");
     gmpmee_millerrabin_safe_next_cand(
       *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state, javaStatePtr));
   }
@@ -493,6 +511,7 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_safe_once");
     gmpmee_millerrabin_safe_clear(
       *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state, javaStatePtr));
   }
@@ -501,6 +520,7 @@ extern "C" {
   /*
    * Class:     com_verificatum_vmgj_VMG
    * Method:    millerrabin_current_safe
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_safe_clear");
    * Signature: (J)[B
    */
   JNIEXPORT jbyteArray JNICALL
@@ -510,6 +530,7 @@ extern "C" {
     jbyteArray javaResult;
 
     VMGJ_UNUSED(clazz);
+    VMGJ_ASSERT_HANDLE(javaStatePtr, "millerrabin_current_safe");
     mpz_t_to_jbyteArray(env, &javaResult,
                         (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state,
                                               javaStatePtr))->nstate->n);
