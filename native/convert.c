@@ -40,6 +40,17 @@ vmgj_throw_oom(JNIEnv *env, const char *message)
   return 0;
 }
 
+static int
+vmgj_throw_iae(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
 void
 jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
 {
@@ -50,6 +61,11 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
 
   /* Find length in bytes of the jbyteArray. */
   byte_len = (*env)->GetArrayLength(env, javaBytes);
+  if (byte_len <= 0)
+    {
+      vmgj_throw_iae(env, "empty byte arrays are not valid input");
+      return;
+    }
 
   /* Fetch a pointer to the jbyteArray, viewed as a jbyte[]. The NULL
      parameter indicates that we do not need to know if the JVM copies
