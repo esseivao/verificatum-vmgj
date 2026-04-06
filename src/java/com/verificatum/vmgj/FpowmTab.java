@@ -68,12 +68,12 @@ public class FpowmTab implements AutoCloseable {
     /**
      * Absolute upper bound for the default aggregate table cap.
      */
-    private static final long ABSOLUTE_MAX_TOTAL_BYTES = 8L * GIBIBYTE;
+    private static final long ABSOLUTE_MAX_TOTAL_BYTES = 32L * GIBIBYTE;
 
     /**
      * Absolute upper bound for the default per-table cap.
      */
-    private static final long ABSOLUTE_MAX_TABLE_BYTES = 2L * GIBIBYTE;
+    private static final long ABSOLUTE_MAX_TABLE_BYTES = 8L * GIBIBYTE;
 
     /**
      * Numerator of the fraction used for the default runtime total

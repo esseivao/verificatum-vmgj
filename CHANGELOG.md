@@ -18,8 +18,8 @@ See [README.md](README.md) for build and installation instructions.
 - Tightened fixed-base precomputation safeguards to reject
   `blockWidth > 24` and use guardrail defaults that scale with host
   memory but are bounded: total cap defaults to
-  `min(totalMemory / 2, 8 GiB)` and per-table cap defaults to
-  `min(totalMemory / 4, 2 GiB)` (with system-property overrides and
+  `min(totalMemory / 2, 32 GiB)` and per-table cap defaults to
+  `min(totalMemory / 4, 8 GiB)` (with system-property overrides and
   bounded fallbacks when runtime memory detection is unavailable).
 
 - Made `FpowmTab` implement `AutoCloseable` and updated the internal
