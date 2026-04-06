@@ -209,6 +209,12 @@ extern "C" {
     gmpmee_fpowm_tab *tablePtr =
       (gmpmee_fpowm_tab *)malloc(sizeof(gmpmee_fpowm_tab));
 
+    if (tablePtr == NULL)
+      {
+        fprintf(stderr, "VMGJ fatal: malloc() failed for fpowm table\n");
+        abort();
+      }
+
     VMGJ_UNUSED(clazz);
 
     jbyteArray_to_mpz_t(env, &basis, javaBasis);
@@ -313,6 +319,11 @@ extern "C" {
     if (search || gmpmee_millerrabin_trial(n)) {
       statePtr =
         (gmpmee_millerrabin_state *)malloc(sizeof(gmpmee_millerrabin_state));
+      if (statePtr == NULL)
+        {
+          fprintf(stderr, "VMGJ fatal: malloc() failed for Miller-Rabin state\n");
+          abort();
+        }
       gmpmee_millerrabin_init(*statePtr, n);
     }
     if (search) {
@@ -418,6 +429,12 @@ extern "C" {
     if (search || gmpmee_millerrabin_safe_trial(n)) {
       statePtr = (gmpmee_millerrabin_safe_state *)
         malloc(sizeof(gmpmee_millerrabin_safe_state));
+      if (statePtr == NULL)
+        {
+          fprintf(stderr,
+                  "VMGJ fatal: malloc() failed for safe Miller-Rabin state\n");
+          abort();
+        }
       gmpmee_millerrabin_safe_init(*statePtr, n);
     }
     if (search) {

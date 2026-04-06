@@ -43,6 +43,12 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
      parameter indicates that we do not need to know if the JVM copies
      the bytes for us to a new array or not. */
   cBytes = (*env)->GetByteArrayElements(env, javaBytes, NULL);
+  if (cBytes == NULL)
+    {
+      fprintf(stderr,
+              "VMGJ fatal: GetByteArrayElements() failed for input bytes\n");
+      abort();
+    }
 
   /* Allocate space for result. */
   mpz_init(*gmpValue);
@@ -87,10 +93,21 @@ void mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
 
   /* Allocate a new java byte array in JVM space. */
   *javaBytes = (*env)->NewByteArray(env, byte_len);
+  if (*javaBytes == NULL)
+    {
+      fprintf(stderr, "VMGJ fatal: NewByteArray() failed\n");
+      abort();
+    }
 
   /* Fetch a pointer to the java byte array, viewed as a jbyte
      array. */
   cBytes = (*env)->GetByteArrayElements(env, *javaBytes, NULL);
+  if (cBytes == NULL)
+    {
+      fprintf(stderr,
+              "VMGJ fatal: GetByteArrayElements() failed for output bytes\n");
+      abort();
+    }
 
   /* If the integer gmpValue is negative we add the smallest integer
      of the form 2^n such that 2^n > |gmpValue| and n is a multiple of
