@@ -56,24 +56,19 @@ public class FpowmTab implements AutoCloseable {
         "com.verificatum.vmgj.fpowm.maxTotalBytes";
 
     /**
-     * Number of bytes in one gibibyte.
+     * Number of bytes in one mebibyte.
      */
-    private static final long GIBIBYTE = 1024L * 1024L * 1024L;
+    private static final long MEBIBYTE = 1024L * 1024L;
+
+    /**
+     * Default upper bound for the estimated size of one table.
+     */
+    private static final long DEFAULT_MAX_TABLE_BYTES = 256L * MEBIBYTE;
 
     /**
      * Upper bound needed to safely evaluate 2^blockWidth using a long.
      */
     private static final int MAX_SUPPORTED_BLOCK_WIDTH = 24;
-
-    /**
-     * Absolute upper bound for the default aggregate table cap.
-     */
-    private static final long ABSOLUTE_MAX_TOTAL_BYTES = 32L * GIBIBYTE;
-
-    /**
-     * Absolute upper bound for the default per-table cap.
-     */
-    private static final long ABSOLUTE_MAX_TABLE_BYTES = 8L * GIBIBYTE;
 
     /**
      * Numerator of the fraction used for the default runtime total
@@ -86,18 +81,6 @@ public class FpowmTab implements AutoCloseable {
      * memory cap.
      */
     private static final long RUNTIME_TOTAL_CAP_DENOMINATOR = 2L;
-
-    /**
-     * Numerator of the fraction used for the default runtime per-table
-     * memory cap.
-     */
-    private static final long RUNTIME_TABLE_CAP_NUMERATOR = 1L;
-
-    /**
-     * Denominator of the fraction used for the default runtime
-     * per-table memory cap.
-     */
-    private static final long RUNTIME_TABLE_CAP_DENOMINATOR = 4L;
 
     /**
      * Conservative native bookkeeping overhead per table.
@@ -323,38 +306,36 @@ public class FpowmTab implements AutoCloseable {
      * @param estimatedBytes Estimated native bytes for the table.
      */
     private static void reserveTableBytes(final long estimatedBytes) {
-        final long totalPhysicalMemory = detectTotalPhysicalMemoryBytes();
-        final long defaultTotalBytes = getDefaultTotalCapBytes(totalPhysicalMemory);
-        final long defaultTableBytes =
-            getDefaultTableCapBytes(totalPhysicalMemory, defaultTotalBytes);
-
-        final long maxTotalBytes =
-            getConfiguredLimit(MAX_TOTAL_BYTES_PROPERTY,
-                               defaultTotalBytes);
         final long maxTableBytes =
             getConfiguredLimit(MAX_TABLE_BYTES_PROPERTY,
-                               defaultTableBytes);
-        final long effectiveMaxTableBytes = Math.min(maxTableBytes, maxTotalBytes);
-
-        if (estimatedBytes > effectiveMaxTableBytes) {
+                               DEFAULT_MAX_TABLE_BYTES);
+        if (estimatedBytes > maxTableBytes) {
             throw new IllegalArgumentException("Estimated fixed-base table size "
                                                + estimatedBytes
                                                + " bytes exceeds limit "
-                                               + effectiveMaxTableBytes
+                                               + maxTableBytes
                                                + " bytes. Lower blockWidth or set -D"
                                                + MAX_TABLE_BYTES_PROPERTY
                                                + "=<bytes>");
         }
 
+        final long maxTotalBytes =
+            getConfiguredLimit(MAX_TOTAL_BYTES_PROPERTY,
+                               Long.MAX_VALUE);
+        final long runtimeTotalCap = getRuntimeTotalCapBytes();
+        final long effectiveMaxTotalBytes =
+            runtimeTotalCap > 0 ? Math.min(maxTotalBytes, runtimeTotalCap)
+            : maxTotalBytes;
+
         while (true) {
             final long reserved = RESERVED_TABLE_BYTES.get();
             final long updated = checkedAdd(reserved, estimatedBytes);
 
-            if (updated > maxTotalBytes) {
+            if (updated > effectiveMaxTotalBytes) {
                 throw new IllegalStateException("Estimated total size of live fixed-base tables "
                                                 + updated
                                                 + " bytes exceeds limit "
-                                                + maxTotalBytes
+                                                + effectiveMaxTotalBytes
                                                 + " bytes. Free unused tables or set -D"
                                                 + MAX_TOTAL_BYTES_PROPERTY
                                                 + "=<bytes>");
@@ -416,44 +397,22 @@ public class FpowmTab implements AutoCloseable {
     }
 
     /**
-     * Returns the default aggregate cap for all live fixed-base
-     * precomputation tables.
+     * Returns the runtime cap based on the detected total physical
+     * memory.
      *
-     * @param totalPhysicalMemory Detected total physical memory, or
-     * a non-positive value if unavailable.
-     * @return Default aggregate cap in bytes.
+     * @return Runtime total cap in bytes, or {@code 0} if the total
+     * physical memory is unavailable.
      */
-    private static long getDefaultTotalCapBytes(final long totalPhysicalMemory) {
+    private static long getRuntimeTotalCapBytes() {
+        final long totalPhysicalMemory = detectTotalPhysicalMemoryBytes();
+
         if (totalPhysicalMemory <= 0) {
-            return ABSOLUTE_MAX_TOTAL_BYTES;
+            return 0;
         }
 
-        final long runtimeCap = totalPhysicalMemory
+        return totalPhysicalMemory
             * RUNTIME_TOTAL_CAP_NUMERATOR
             / RUNTIME_TOTAL_CAP_DENOMINATOR;
-        return Math.min(runtimeCap, ABSOLUTE_MAX_TOTAL_BYTES);
-    }
-
-    /**
-     * Returns the default cap for a single fixed-base precomputation
-     * table.
-     *
-     * @param totalPhysicalMemory Detected total physical memory, or
-     * a non-positive value if unavailable.
-     * @param defaultTotalBytes Default aggregate cap in bytes.
-     * @return Default per-table cap in bytes.
-     */
-    private static long getDefaultTableCapBytes(final long totalPhysicalMemory,
-                                                final long defaultTotalBytes) {
-        if (totalPhysicalMemory <= 0) {
-            return Math.min(ABSOLUTE_MAX_TABLE_BYTES, defaultTotalBytes);
-        }
-
-        final long runtimeTableCap = totalPhysicalMemory
-            * RUNTIME_TABLE_CAP_NUMERATOR
-            / RUNTIME_TABLE_CAP_DENOMINATOR;
-        return Math.min(Math.min(runtimeTableCap, ABSOLUTE_MAX_TABLE_BYTES),
-                        defaultTotalBytes);
     }
 
     /**

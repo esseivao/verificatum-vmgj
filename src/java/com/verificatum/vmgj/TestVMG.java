@@ -213,23 +213,52 @@ public final class TestVMG {
         }
         assert invalidThrown : "Failed to reject invalid block width!";
 
-        final String propertyName = FpowmTab.MAX_TABLE_BYTES_PROPERTY;
-        final String original = System.getProperty(propertyName);
+        final String tablePropertyName = FpowmTab.MAX_TABLE_BYTES_PROPERTY;
+        final String totalPropertyName = FpowmTab.MAX_TOTAL_BYTES_PROPERTY;
+        final String originalTable = System.getProperty(tablePropertyName);
+        final String originalTotal = System.getProperty(totalPropertyName);
 
-        System.setProperty(propertyName, Long.toString(estimatedBytes - 1L));
-        boolean limitThrown = false;
+        System.setProperty(tablePropertyName, Long.toString(estimatedBytes - 1L));
+        boolean tableLimitThrown = false;
         try {
             new FpowmTab(BigInteger.valueOf(2L), modulus, 16, 2048);
         } catch (IllegalArgumentException iae) {
-            limitThrown = iae.getMessage().indexOf("Estimated fixed-base table size") >= 0;
+            tableLimitThrown = iae.getMessage().indexOf("Estimated fixed-base table size") >= 0;
         } finally {
-            if (original == null) {
-                System.clearProperty(propertyName);
+            if (originalTable == null) {
+                System.clearProperty(tablePropertyName);
             } else {
-                System.setProperty(propertyName, original);
+                System.setProperty(tablePropertyName, originalTable);
+            }
+            if (originalTotal == null) {
+                System.clearProperty(totalPropertyName);
+            } else {
+                System.setProperty(totalPropertyName, originalTotal);
             }
         }
-        assert limitThrown : "Failed to enforce fixed-base table budget!";
+        assert tableLimitThrown : "Failed to enforce fixed-base table budget!";
+
+        System.setProperty(tablePropertyName, Long.toString(Long.MAX_VALUE));
+        System.setProperty(totalPropertyName, Long.toString(estimatedBytes - 1L));
+        boolean totalLimitThrown = false;
+        try {
+            new FpowmTab(BigInteger.valueOf(2L), modulus, 16, 2048);
+        } catch (IllegalStateException ise) {
+            totalLimitThrown =
+                ise.getMessage().indexOf("Estimated total size of live fixed-base tables") >= 0;
+        } finally {
+            if (originalTable == null) {
+                System.clearProperty(tablePropertyName);
+            } else {
+                System.setProperty(tablePropertyName, originalTable);
+            }
+            if (originalTotal == null) {
+                System.clearProperty(totalPropertyName);
+            } else {
+                System.setProperty(totalPropertyName, originalTotal);
+            }
+        }
+        assert totalLimitThrown : "Failed to enforce aggregate fixed-base table budget!";
     }
 
     /**
