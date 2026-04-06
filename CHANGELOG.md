@@ -16,10 +16,11 @@ See [README.md](README.md) for build and installation instructions.
   before entering native code.
 
 - Tightened fixed-base precomputation safeguards to reject
-  `blockWidth > 24` and cap live table reservations to at most 50% of
-  detected total physical memory (or stricter configured limits),
-  with configured limits used when runtime memory detection is
-  unavailable.
+  `blockWidth > 24` and use guardrail defaults that scale with host
+  memory but are bounded: total cap defaults to
+  `min(totalMemory / 2, 8 GiB)` and per-table cap defaults to
+  `min(totalMemory / 4, 2 GiB)` (with system-property overrides and
+  bounded fallbacks when runtime memory detection is unavailable).
 
 - Made `FpowmTab` implement `AutoCloseable` and updated the internal
   benchmark/test callers to release native fixed-base tables promptly.
