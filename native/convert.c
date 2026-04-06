@@ -28,6 +28,18 @@
 #include <gmp.h>
 #include "convert.h"
 
+static int
+vmgj_throw_oom(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/OutOfMemoryError");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
 void
 jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
 {
@@ -43,6 +55,11 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
      parameter indicates that we do not need to know if the JVM copies
      the bytes for us to a new array or not. */
   cBytes = (*env)->GetByteArrayElements(env, javaBytes, NULL);
+  if (cBytes == NULL)
+    {
+      vmgj_throw_oom(env, "GetByteArrayElements() failed for input bytes");
+      return;
+    }
 
   /* Allocate space for result. */
   mpz_init(*gmpValue);
@@ -87,10 +104,20 @@ void mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
 
   /* Allocate a new java byte array in JVM space. */
   *javaBytes = (*env)->NewByteArray(env, byte_len);
+  if (*javaBytes == NULL)
+    {
+      vmgj_throw_oom(env, "NewByteArray() failed");
+      return;
+    }
 
   /* Fetch a pointer to the java byte array, viewed as a jbyte
      array. */
   cBytes = (*env)->GetByteArrayElements(env, *javaBytes, NULL);
+  if (cBytes == NULL)
+    {
+      vmgj_throw_oom(env, "GetByteArrayElements() failed for output bytes");
+      return;
+    }
 
   /* If the integer gmpValue is negative we add the smallest integer
      of the form 2^n such that 2^n > |gmpValue| and n is a multiple of

@@ -43,6 +43,18 @@
 #define VMGJ_JLONG_FROM_PTR(ptr) ((jlong)(intptr_t)(ptr))
 #define VMGJ_PTR_FROM_JLONG(type, value) ((type *)(intptr_t)(value))
 
+static int
+vmgj_throw_oom(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/OutOfMemoryError");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -211,6 +223,12 @@ extern "C" {
     gmpmee_fpowm_tab *tablePtr =
       (gmpmee_fpowm_tab *)malloc(sizeof(gmpmee_fpowm_tab));
 
+    if (tablePtr == NULL)
+      {
+        vmgj_throw_oom(env, "malloc() failed for fpowm table");
+        return 0;
+      }
+
     VMGJ_UNUSED(clazz);
 
     jbyteArray_to_mpz_t(env, &basis, javaBasis);
@@ -315,6 +333,12 @@ extern "C" {
     if (search || gmpmee_millerrabin_trial(n)) {
       statePtr =
         (gmpmee_millerrabin_state *)malloc(sizeof(gmpmee_millerrabin_state));
+      if (statePtr == NULL)
+        {
+          mpz_clear(n);
+          vmgj_throw_oom(env, "malloc() failed for Miller-Rabin state");
+          return 0;
+        }
       gmpmee_millerrabin_init(*statePtr, n);
     }
     if (search) {
@@ -420,6 +444,12 @@ extern "C" {
     if (search || gmpmee_millerrabin_safe_trial(n)) {
       statePtr = (gmpmee_millerrabin_safe_state *)
         malloc(sizeof(gmpmee_millerrabin_safe_state));
+      if (statePtr == NULL)
+        {
+          mpz_clear(n);
+          vmgj_throw_oom(env, "malloc() failed for safe Miller-Rabin state");
+          return 0;
+        }
       gmpmee_millerrabin_safe_init(*statePtr, n);
     }
     if (search) {
