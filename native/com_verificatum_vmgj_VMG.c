@@ -163,6 +163,7 @@ extern "C" {
       {
         javaBase = (jbyteArray)(*env)->GetObjectArrayElement(env, javaBases, i);
         jbyteArray_to_mpz_t(env, &(bases[i]), javaBase);
+        (*env)->DeleteLocalRef(env, javaBase);
       }
 
     /* Convert exponents represented as array of byte[] to an array of
@@ -173,6 +174,7 @@ extern "C" {
         javaExponent =
           (jbyteArray)(*env)->GetObjectArrayElement(env, javaExponents, i);
         jbyteArray_to_mpz_t(env, &(exponents[i]), javaExponent);
+        (*env)->DeleteLocalRef(env, javaExponent);
       }
 
     /* Convert modulus represented as a byte[] to a mpz_t. */
