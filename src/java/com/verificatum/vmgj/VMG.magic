@@ -168,6 +168,9 @@ public final class VMG {
     public static BigInteger spowm(final BigInteger[] bases,
                                    final BigInteger[] exponents,
                                    final BigInteger modulus) {
+        if (bases.length != exponents.length) {
+            throw new IllegalArgumentException("bases and exponents must have the same length");
+        }
         final byte[][] native_bases = convert(bases);
         final byte[][] native_exponents = convert(exponents);
         return new BigInteger(spowm(native_bases,

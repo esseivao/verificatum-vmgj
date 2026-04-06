@@ -67,6 +67,18 @@ vmgj_throw_illegal_state(JNIEnv *env, const char *message)
   return 0;
 }
 
+static int
+vmgj_throw_iae(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -177,8 +189,23 @@ extern "C" {
 
     /* Extract number of bases/exponents. */
     jsize numberOfBases = (*env)->GetArrayLength(env, javaBases);
+    if ((*env)->ExceptionCheck(env))
+      {
+        return NULL;
+      }
+    jsize numberOfExponents = (*env)->GetArrayLength(env, javaExponents);
+    if ((*env)->ExceptionCheck(env))
+      {
+        return NULL;
+      }
 
     VMGJ_UNUSED(clazz);
+
+    if (numberOfBases != numberOfExponents)
+      {
+        vmgj_throw_iae(env, "bases and exponents must have the same length");
+        return NULL;
+      }
 
     /* Convert exponents represented as array of byte[] to array of
        mpz_t. */
