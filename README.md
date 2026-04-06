@@ -95,6 +95,12 @@ to invoke Javadoc to build the API. The API is not installed
 anywhere. You can copy it to any location.
 
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a full history of changes,
+including added features, bug fixes, and ABI notes.
+
+
 ## Reporting Bugs
 
 Minor bugs should be reported in the repository system as issues or
