@@ -477,6 +477,8 @@ extern "C" {
   JNIEXPORT void JNICALL Java_com_verificatum_vmgj_VMG_fpowm_1clear
   (JNIEnv *env, jclass clazz, jlong javaTablePtr)
   {
+    gmpmee_fpowm_tab *tablePtr;
+
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
     if (javaTablePtr == 0)
@@ -484,7 +486,9 @@ extern "C" {
         vmgj_throw_illegal_state(env, "Invalid native handle in fpowm_clear");
         return;
       }
-    gmpmee_fpowm_clear(*VMGJ_PTR_FROM_JLONG(gmpmee_fpowm_tab, javaTablePtr));
+    tablePtr = VMGJ_PTR_FROM_JLONG(gmpmee_fpowm_tab, javaTablePtr);
+    gmpmee_fpowm_clear(*tablePtr);
+    free(tablePtr);
   }
 
 
@@ -634,6 +638,8 @@ extern "C" {
   JNIEXPORT void JNICALL Java_com_verificatum_vmgj_VMG_millerrabin_1clear
   (JNIEnv *env, jclass clazz, jlong javaStatePtr)
   {
+    gmpmee_millerrabin_state *statePtr;
+
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
     if (javaStatePtr == 0)
@@ -641,8 +647,9 @@ extern "C" {
         vmgj_throw_illegal_state(env, "Invalid native handle in millerrabin_clear");
         return;
       }
-    gmpmee_millerrabin_clear(
-      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr));
+    statePtr = VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr);
+    gmpmee_millerrabin_clear(*statePtr);
+    free(statePtr);
   }
 
 
@@ -794,6 +801,8 @@ extern "C" {
   JNIEXPORT void JNICALL Java_com_verificatum_vmgj_VMG_millerrabin_1safe_1clear
   (JNIEnv *env, jclass clazz, jlong javaStatePtr)
   {
+    gmpmee_millerrabin_safe_state *statePtr;
+
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
     if (javaStatePtr == 0)
@@ -802,8 +811,9 @@ extern "C" {
                                  "Invalid native handle in millerrabin_safe_clear");
         return;
       }
-    gmpmee_millerrabin_safe_clear(
-      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state, javaStatePtr));
+    statePtr = VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state, javaStatePtr);
+    gmpmee_millerrabin_safe_clear(*statePtr);
+    free(statePtr);
   }
 
 
