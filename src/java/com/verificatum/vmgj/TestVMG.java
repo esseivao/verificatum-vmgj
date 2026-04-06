@@ -177,18 +177,59 @@ public final class TestVMG {
         // Generate random modulus.
         final BigInteger modulus = new BigInteger(bitLength, random);
         final BigInteger basis = new BigInteger(bitLength, random);
-        final FpowmTab tab = new FpowmTab(basis, modulus, bitLength);
+        try (FpowmTab tab = new FpowmTab(basis, modulus, bitLength)) {
 
-        // Test optimized code.
-        final long t = System.currentTimeMillis();
-        while (!done(t, milliSecs)) {
+            // Test optimized code.
+            final long t = System.currentTimeMillis();
+            while (!done(t, milliSecs)) {
 
-            final BigInteger exponent = new BigInteger(bitLength, random);
-            final BigInteger vmg = tab.fpowm(exponent);
-            final BigInteger res = basis.modPow(exponent, modulus);
+                final BigInteger exponent = new BigInteger(bitLength, random);
+                final BigInteger vmg = tab.fpowm(exponent);
+                final BigInteger res = basis.modPow(exponent, modulus);
 
-            assert vmg.equals(res) : "Failed to fixed-basis exponentiate!";
+                assert vmg.equals(res) : "Failed to fixed-basis exponentiate!";
+            }
         }
+    }
+
+    /**
+     * Tests Java-side guards for fixed-base precomputation.
+     */
+    protected static void test_fpowm_guards() {
+
+        final BigInteger modulus = BigInteger.ONE.shiftLeft(2048)
+            .subtract(BigInteger.ONE);
+        final long estimatedBytes = FpowmTab.estimateTableBytes(modulus,
+                                                                16,
+                                                                2048);
+
+        assert estimatedBytes > 0 : "Failed to estimate fixed-base table size!";
+
+        boolean invalidThrown = false;
+        try {
+            FpowmTab.estimateTableBytes(modulus, 0, 2048);
+        } catch (IllegalArgumentException iae) {
+            invalidThrown = true;
+        }
+        assert invalidThrown : "Failed to reject invalid block width!";
+
+        final String propertyName = FpowmTab.MAX_TABLE_BYTES_PROPERTY;
+        final String original = System.getProperty(propertyName);
+
+        System.setProperty(propertyName, Long.toString(estimatedBytes - 1L));
+        boolean limitThrown = false;
+        try {
+            new FpowmTab(BigInteger.valueOf(2L), modulus, 16, 2048);
+        } catch (IllegalArgumentException iae) {
+            limitThrown = iae.getMessage().indexOf("Estimated fixed-base table size") >= 0;
+        } finally {
+            if (original == null) {
+                System.clearProperty(propertyName);
+            } else {
+                System.setProperty(propertyName, original);
+            }
+        }
+        assert limitThrown : "Failed to enforce fixed-base table budget!";
     }
 
     /**
@@ -404,6 +445,8 @@ public final class TestVMG {
         test_modmul(bitLength, milliSecs);
         System.out.println("spowm (simultaneous modular exponentiation)");
         test_spowm(bitLength, milliSecs);
+        System.out.println("fpowm guards (Java-side fixed-base budgeting)");
+        test_fpowm_guards();
         System.out.println("fpowm (fixed-basis modular exponentiation)");
         test_fpowm(bitLength, milliSecs);
         System.out.println("legendre (Legendre symbol)");

@@ -229,21 +229,22 @@ public final class BenchVMG {
             exponents[l] = new BigInteger(bitLength, random);
         }
 
-        final FpowmTab tab = new FpowmTab(basis, modulus, bitLength);
+        try (FpowmTab tab = new FpowmTab(basis, modulus, bitLength)) {
 
-        // Time optimized code.
-        final long t = System.currentTimeMillis();
-        long i = 0;
-        int l = 0;
-        while (!done(t, milliSecs)) {
+            // Time optimized code.
+            final long t = System.currentTimeMillis();
+            long i = 0;
+            int l = 0;
+            while (!done(t, milliSecs)) {
 
-            tab.fpowm(exponents[l]);
+                tab.fpowm(exponents[l]);
 
-            l = (l + 1) % len;
+                l = (l + 1) % len;
 
-            i++;
+                i++;
+            }
+            return i;
         }
-        return i;
     }
 
     /**

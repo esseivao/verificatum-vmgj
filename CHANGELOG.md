@@ -9,6 +9,15 @@ See [README.md](README.md) for build and installation instructions.
 
 ## [Unreleased]
 
+### Fixed
+
+- Added Java-side size estimation and configurable byte budgets for
+  `FpowmTab` precomputation to reject oversized fixed-base tables
+  before entering native code.
+
+- Made `FpowmTab` implement `AutoCloseable` and updated the internal
+  benchmark/test callers to release native fixed-base tables promptly.
+
 ---
 
 ## [1.4.0] - 2026-04-06
