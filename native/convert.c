@@ -38,6 +38,11 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
 
   /* Find length in bytes of the jbyteArray. */
   byte_len = (*env)->GetArrayLength(env, javaBytes);
+  if (byte_len <= 0)
+    {
+      fprintf(stderr, "VMGJ fatal: empty byte arrays are not valid input\n");
+      abort();
+    }
 
   /* Fetch a pointer to the jbyteArray, viewed as a jbyte[]. The NULL
      parameter indicates that we do not need to know if the JVM copies
