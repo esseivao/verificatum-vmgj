@@ -163,6 +163,23 @@ public final class TestVMG {
     }
 
     /**
+     * Tests Java-side guards for simultaneous exponentiation.
+     */
+    protected static void test_spowm_guards() {
+
+        boolean invalidThrown = false;
+        try {
+            VMG.spowm(new BigInteger[] {BigInteger.ONE},
+                      new BigInteger[0],
+                      BigInteger.valueOf(3L));
+        } catch (IllegalArgumentException iae) {
+            invalidThrown =
+                iae.getMessage().indexOf("same length") >= 0;
+        }
+        assert invalidThrown : "Failed to reject mismatched spowm inputs!";
+    }
+
+    /**
      * Tests fixed-basis exponentiation.
      *
      * @param bitLength Number of bits of integers in the operation
@@ -497,6 +514,8 @@ public final class TestVMG {
         test_powm(bitLength, milliSecs);
         System.out.println("modmul (modular multiplication)");
         test_modmul(bitLength, milliSecs);
+        System.out.println("spowm guards (Java-side length validation)");
+        test_spowm_guards();
         System.out.println("spowm (simultaneous modular exponentiation)");
         test_spowm(bitLength, milliSecs);
         System.out.println("fpowm guards (Java-side fixed-base budgeting)");
