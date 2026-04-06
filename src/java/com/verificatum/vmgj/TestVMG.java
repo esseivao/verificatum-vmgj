@@ -99,6 +99,32 @@ public final class TestVMG {
     }
 
     /**
+     * Tests modular multiplication.
+     *
+     * @param bitLength Number of bits of integers.
+     * @param milliSecs Duration of the timing.
+     */
+    protected static void test_modmul(final int bitLength,
+                                      final long milliSecs) {
+
+        final SecureRandom random = new SecureRandom();
+
+        // Test optimized code.
+        final long t = System.currentTimeMillis();
+        while (!done(t, milliSecs)) {
+
+            final BigInteger modulus = new BigInteger(bitLength, random);
+            final BigInteger a = new BigInteger(bitLength, random);
+            final BigInteger b = new BigInteger(bitLength, random);
+
+            final BigInteger vmg = VMG.modmul(a, b, modulus);
+            final BigInteger java = a.multiply(b).mod(modulus);
+
+            assert vmg.equals(java) : "Modular multiplication failed!";
+        }
+    }
+
+    /**
      * Test simultaneous exponentiation.
      *
      * @param bitLength Number of bits of integers.
@@ -151,18 +177,88 @@ public final class TestVMG {
         // Generate random modulus.
         final BigInteger modulus = new BigInteger(bitLength, random);
         final BigInteger basis = new BigInteger(bitLength, random);
-        final FpowmTab tab = new FpowmTab(basis, modulus, bitLength);
+        try (FpowmTab tab = new FpowmTab(basis, modulus, bitLength)) {
 
-        // Test optimized code.
-        final long t = System.currentTimeMillis();
-        while (!done(t, milliSecs)) {
+            // Test optimized code.
+            final long t = System.currentTimeMillis();
+            while (!done(t, milliSecs)) {
 
-            final BigInteger exponent = new BigInteger(bitLength, random);
-            final BigInteger vmg = tab.fpowm(exponent);
-            final BigInteger res = basis.modPow(exponent, modulus);
+                final BigInteger exponent = new BigInteger(bitLength, random);
+                final BigInteger vmg = tab.fpowm(exponent);
+                final BigInteger res = basis.modPow(exponent, modulus);
 
-            assert vmg.equals(res) : "Failed to fixed-basis exponentiate!";
+                assert vmg.equals(res) : "Failed to fixed-basis exponentiate!";
+            }
         }
+    }
+
+    /**
+     * Tests Java-side guards for fixed-base precomputation.
+     */
+    protected static void test_fpowm_guards() {
+
+        final BigInteger modulus = BigInteger.ONE.shiftLeft(2048)
+            .subtract(BigInteger.ONE);
+        final long estimatedBytes = FpowmTab.estimateTableBytes(modulus,
+                                                                16,
+                                                                2048);
+
+        assert estimatedBytes > 0 : "Failed to estimate fixed-base table size!";
+
+        boolean invalidThrown = false;
+        try {
+            FpowmTab.estimateTableBytes(modulus, 0, 2048);
+        } catch (IllegalArgumentException iae) {
+            invalidThrown = true;
+        }
+        assert invalidThrown : "Failed to reject invalid block width!";
+
+        final String tablePropertyName = FpowmTab.MAX_TABLE_BYTES_PROPERTY;
+        final String totalPropertyName = FpowmTab.MAX_TOTAL_BYTES_PROPERTY;
+        final String originalTable = System.getProperty(tablePropertyName);
+        final String originalTotal = System.getProperty(totalPropertyName);
+
+        System.setProperty(tablePropertyName, Long.toString(estimatedBytes - 1L));
+        boolean tableLimitThrown = false;
+        try {
+            new FpowmTab(BigInteger.valueOf(2L), modulus, 16, 2048);
+        } catch (IllegalArgumentException iae) {
+            tableLimitThrown = iae.getMessage().indexOf("Estimated fixed-base table size") >= 0;
+        } finally {
+            if (originalTable == null) {
+                System.clearProperty(tablePropertyName);
+            } else {
+                System.setProperty(tablePropertyName, originalTable);
+            }
+            if (originalTotal == null) {
+                System.clearProperty(totalPropertyName);
+            } else {
+                System.setProperty(totalPropertyName, originalTotal);
+            }
+        }
+        assert tableLimitThrown : "Failed to enforce fixed-base table budget!";
+
+        System.setProperty(tablePropertyName, Long.toString(Long.MAX_VALUE));
+        System.setProperty(totalPropertyName, Long.toString(estimatedBytes - 1L));
+        boolean totalLimitThrown = false;
+        try {
+            new FpowmTab(BigInteger.valueOf(2L), modulus, 16, 2048);
+        } catch (IllegalStateException ise) {
+            totalLimitThrown =
+                ise.getMessage().indexOf("Estimated total size of live fixed-base tables") >= 0;
+        } finally {
+            if (originalTable == null) {
+                System.clearProperty(tablePropertyName);
+            } else {
+                System.setProperty(tablePropertyName, originalTable);
+            }
+            if (originalTotal == null) {
+                System.clearProperty(totalPropertyName);
+            } else {
+                System.setProperty(totalPropertyName, originalTotal);
+            }
+        }
+        assert totalLimitThrown : "Failed to enforce aggregate fixed-base table budget!";
     }
 
     /**
@@ -374,8 +470,12 @@ public final class TestVMG {
 
         System.out.println("powm (plain modular exponentiation)");
         test_powm(bitLength, milliSecs);
+        System.out.println("modmul (modular multiplication)");
+        test_modmul(bitLength, milliSecs);
         System.out.println("spowm (simultaneous modular exponentiation)");
         test_spowm(bitLength, milliSecs);
+        System.out.println("fpowm guards (Java-side fixed-base budgeting)");
+        test_fpowm_guards();
         System.out.println("fpowm (fixed-basis modular exponentiation)");
         test_fpowm(bitLength, milliSecs);
         System.out.println("legendre (Legendre symbol)");

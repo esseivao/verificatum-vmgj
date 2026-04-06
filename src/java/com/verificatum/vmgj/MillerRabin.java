@@ -125,7 +125,13 @@ public class MillerRabin {
      * <code>true</code> otherwise.
      */
     public boolean once(final BigInteger base) {
-        return VMG.millerrabin_once(statePtr, base.toByteArray()) == 1;
+        if (primality) {
+            return VMG.millerrabin_once(statePtr, base.toByteArray()) == 1;
+        } else {
+            return VMG.millerrabin_safe_once(statePtr,
+                                             base.toByteArray(),
+                                             0) == 1;
+        }
     }
 
     /**

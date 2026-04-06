@@ -27,6 +27,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include <gmp.h>
 #include "gmpmee.h"
@@ -39,6 +40,32 @@
  * those parameters that we do not use.
  */
 #define VMGJ_UNUSED(x) ((void)(x))
+#define VMGJ_JLONG_FROM_PTR(ptr) ((jlong)(intptr_t)(ptr))
+#define VMGJ_PTR_FROM_JLONG(type, value) ((type *)(intptr_t)(value))
+
+static int
+vmgj_throw_oom(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/OutOfMemoryError");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
+static int
+vmgj_throw_illegal_state(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/IllegalStateException");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,6 +117,46 @@ extern "C" {
 
   /*
    * Class:     com_verificatum_vmgj_VMG
+   * Method:    modmul
+   * Signature: ([B[B[B)[B
+   */
+  JNIEXPORT jbyteArray JNICALL Java_com_verificatum_vmgj_VMG_modmul
+  (JNIEnv *env, jclass clazz, jbyteArray javaA, jbyteArray javaB,
+   jbyteArray javaModulus)
+  {
+    mpz_t a;
+    mpz_t b;
+    mpz_t modulus;
+    mpz_t result;
+    jbyteArray javaResult;
+
+    VMGJ_UNUSED(clazz);
+
+    /* Convert inputs to GMP integers. */
+    jbyteArray_to_mpz_t(env, &a, javaA);
+    jbyteArray_to_mpz_t(env, &b, javaB);
+    jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+
+    /* Compute (a * b) mod modulus. */
+    mpz_init(result);
+    mpz_mul(result, a, b);
+    mpz_mod(result, result, modulus);
+
+    /* Convert result back to Java byte[]. */
+    mpz_t_to_jbyteArray(env, &javaResult, result);
+
+    /* Cleanup. */
+    mpz_clear(result);
+    mpz_clear(modulus);
+    mpz_clear(b);
+    mpz_clear(a);
+
+    return javaResult;
+  }
+
+
+  /*
+   * Class:     com_verificatum_vmgj_VMG
    * Method:    spowm
    * Signature: ([[B[[B[B)[B
    */
@@ -120,6 +187,7 @@ extern "C" {
       {
         javaBase = (jbyteArray)(*env)->GetObjectArrayElement(env, javaBases, i);
         jbyteArray_to_mpz_t(env, &(bases[i]), javaBase);
+        (*env)->DeleteLocalRef(env, javaBase);
       }
 
     /* Convert exponents represented as array of byte[] to an array of
@@ -130,6 +198,7 @@ extern "C" {
         javaExponent =
           (jbyteArray)(*env)->GetObjectArrayElement(env, javaExponents, i);
         jbyteArray_to_mpz_t(env, &(exponents[i]), javaExponent);
+        (*env)->DeleteLocalRef(env, javaExponent);
       }
 
     /* Convert modulus represented as a byte[] to a mpz_t. */
@@ -166,6 +235,12 @@ extern "C" {
     gmpmee_fpowm_tab *tablePtr =
       (gmpmee_fpowm_tab *)malloc(sizeof(gmpmee_fpowm_tab));
 
+    if (tablePtr == NULL)
+      {
+        vmgj_throw_oom(env, "malloc() failed for fpowm table");
+        return 0;
+      }
+
     VMGJ_UNUSED(clazz);
 
     jbyteArray_to_mpz_t(env, &basis, javaBasis);
@@ -176,7 +251,7 @@ extern "C" {
     mpz_clear(modulus);
     mpz_clear(basis);
 
-    return (jlong)(long)tablePtr;
+    return VMGJ_JLONG_FROM_PTR(tablePtr);
   }
 
 
@@ -194,11 +269,18 @@ extern "C" {
     jbyteArray javaResult;
 
     VMGJ_UNUSED(clazz);
+    if (javaTablePtr == 0)
+      {
+        vmgj_throw_illegal_state(env, "Invalid native handle in fpowm");
+        return NULL;
+      }
 
     jbyteArray_to_mpz_t(env, &exponent, javaExponent);
     mpz_init(result);
 
-    gmpmee_fpowm(result, *(gmpmee_fpowm_tab *)(long)javaTablePtr, exponent);
+    gmpmee_fpowm(result,
+          *VMGJ_PTR_FROM_JLONG(gmpmee_fpowm_tab, javaTablePtr),
+          exponent);
 
     /* Translate result back to jbyteArray (this also allocates the
        result array on the JVM heap). */
@@ -221,7 +303,12 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
-    gmpmee_fpowm_clear(*(gmpmee_fpowm_tab *)(long)javaTablePtr);
+    if (javaTablePtr == 0)
+      {
+        vmgj_throw_illegal_state(env, "Invalid native handle in fpowm_clear");
+        return;
+      }
+    gmpmee_fpowm_clear(*VMGJ_PTR_FROM_JLONG(gmpmee_fpowm_tab, javaTablePtr));
   }
 
 
@@ -268,6 +355,12 @@ extern "C" {
     if (search || gmpmee_millerrabin_trial(n)) {
       statePtr =
         (gmpmee_millerrabin_state *)malloc(sizeof(gmpmee_millerrabin_state));
+      if (statePtr == NULL)
+        {
+          mpz_clear(n);
+          vmgj_throw_oom(env, "malloc() failed for Miller-Rabin state");
+          return 0;
+        }
       gmpmee_millerrabin_init(*statePtr, n);
     }
     if (search) {
@@ -276,7 +369,7 @@ extern "C" {
 
     mpz_clear(n);
 
-    return (jlong)(long)statePtr;
+    return VMGJ_JLONG_FROM_PTR(statePtr);
   }
 
 
@@ -290,8 +383,14 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
-    gmpmee_millerrabin_next_cand(*(gmpmee_millerrabin_state *)(long)
-                                 javaStatePtr);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env,
+                                 "Invalid native handle in millerrabin_next_cand");
+        return;
+      }
+    gmpmee_millerrabin_next_cand(
+      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr));
   }
 
 
@@ -307,10 +406,16 @@ extern "C" {
     int res;
 
     VMGJ_UNUSED(clazz);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env, "Invalid native handle in millerrabin_once");
+        return 0;
+      }
 
     jbyteArray_to_mpz_t(env, &base, javaBase);
-    res = gmpmee_millerrabin_once(*(gmpmee_millerrabin_state *)(long)
-                                  javaStatePtr, base);
+    res = gmpmee_millerrabin_once(
+      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr),
+      base);
 
     mpz_clear(base);
 
@@ -328,7 +433,13 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
-    gmpmee_millerrabin_clear(*(gmpmee_millerrabin_state *)(long)javaStatePtr);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env, "Invalid native handle in millerrabin_clear");
+        return;
+      }
+    gmpmee_millerrabin_clear(
+      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr));
   }
 
 
@@ -345,10 +456,15 @@ extern "C" {
 
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env, "Invalid native handle in millerrabin_current");
+        return NULL;
+      }
 
     mpz_t_to_jbyteArray(env, &javaResult,
-                        (*(gmpmee_millerrabin_state *)(long)
-                         javaStatePtr)->n);
+                        (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state,
+                                              javaStatePtr))->n);
     return javaResult;
   }
 
@@ -371,6 +487,12 @@ extern "C" {
     if (search || gmpmee_millerrabin_safe_trial(n)) {
       statePtr = (gmpmee_millerrabin_safe_state *)
         malloc(sizeof(gmpmee_millerrabin_safe_state));
+      if (statePtr == NULL)
+        {
+          mpz_clear(n);
+          vmgj_throw_oom(env, "malloc() failed for safe Miller-Rabin state");
+          return 0;
+        }
       gmpmee_millerrabin_safe_init(*statePtr, n);
     }
     if (search) {
@@ -379,7 +501,7 @@ extern "C" {
 
     mpz_clear(n);
 
-    return (jlong)(long)statePtr;
+    return VMGJ_JLONG_FROM_PTR(statePtr);
   }
 
 
@@ -394,8 +516,14 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
-    gmpmee_millerrabin_safe_next_cand(*(gmpmee_millerrabin_safe_state *)(long)
-                                      javaStatePtr);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env,
+                                 "Invalid native handle in millerrabin_safe_next_cand");
+        return;
+      }
+    gmpmee_millerrabin_safe_next_cand(
+      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state, javaStatePtr));
   }
 
 
@@ -412,19 +540,27 @@ extern "C" {
     int res;
 
     VMGJ_UNUSED(clazz);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env,
+                                 "Invalid native handle in millerrabin_safe_once");
+        return 0;
+      }
 
     jbyteArray_to_mpz_t(env, &base, javaBase);
 
     if (((int)javaIndex) % 2 == 0)
       {
-        res = gmpmee_millerrabin_once((*(gmpmee_millerrabin_safe_state *)(long)
-                                       javaStatePtr)->nstate,
+        res = gmpmee_millerrabin_once((*VMGJ_PTR_FROM_JLONG(
+                                        gmpmee_millerrabin_safe_state,
+                                        javaStatePtr))->nstate,
                                       base);
       }
     else
       {
-        res = gmpmee_millerrabin_once((*(gmpmee_millerrabin_safe_state *)(long)
-                                       javaStatePtr)->mstate,
+        res = gmpmee_millerrabin_once((*VMGJ_PTR_FROM_JLONG(
+                                        gmpmee_millerrabin_safe_state,
+                                        javaStatePtr))->mstate,
                                       base);
       }
 
@@ -444,8 +580,14 @@ extern "C" {
   {
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
-    gmpmee_millerrabin_safe_clear(*(gmpmee_millerrabin_safe_state *)(long)
-                                  javaStatePtr);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env,
+                                 "Invalid native handle in millerrabin_safe_clear");
+        return;
+      }
+    gmpmee_millerrabin_safe_clear(
+      *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state, javaStatePtr));
   }
 
 
@@ -461,9 +603,15 @@ extern "C" {
     jbyteArray javaResult;
 
     VMGJ_UNUSED(clazz);
+    if (javaStatePtr == 0)
+      {
+        vmgj_throw_illegal_state(env,
+                                 "Invalid native handle in millerrabin_current_safe");
+        return NULL;
+      }
     mpz_t_to_jbyteArray(env, &javaResult,
-                        (*(gmpmee_millerrabin_safe_state *)(long)
-                         javaStatePtr)->nstate->n);
+                        (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state,
+                                              javaStatePtr))->nstate->n);
     return javaResult;
   }
 
