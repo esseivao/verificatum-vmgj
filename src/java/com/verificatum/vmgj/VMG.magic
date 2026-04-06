@@ -114,6 +114,36 @@ public final class VMG {
     }
 
     /**
+     * Computes the modular multiplication of two values using the
+     * given modulus.
+     *
+     * @param a First operand.
+     * @param b Second operand.
+     * @param modulus Modulus used during modular multiplication.
+     * @return Result of (a * b) mod modulus, given in two's complement.
+     */
+    static native byte[] modmul(byte[] a,
+                                byte[] b,
+                                byte[] modulus);
+
+    /**
+     * Computes the modular multiplication of two values using the
+     * given modulus.
+     *
+     * @param a First operand.
+     * @param b Second operand.
+     * @param modulus Modulus used during modular multiplication.
+     * @return Result of (a * b) mod modulus.
+     */
+    public static BigInteger modmul(final BigInteger a,
+                                    final BigInteger b,
+                                    final BigInteger modulus) {
+        return new BigInteger(modmul(a.toByteArray(),
+                                     b.toByteArray(),
+                                     modulus.toByteArray()));
+    }
+
+    /**
      * Computes a simultaneous modular exponentiation.
      *
      * @param bases Basis integers.
