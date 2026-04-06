@@ -28,6 +28,18 @@
 #include <gmp.h>
 #include "convert.h"
 
+static int
+vmgj_throw_iae(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
 void
 jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
 {
@@ -40,8 +52,8 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
   byte_len = (*env)->GetArrayLength(env, javaBytes);
   if (byte_len <= 0)
     {
-      fprintf(stderr, "VMGJ fatal: empty byte arrays are not valid input\n");
-      abort();
+      vmgj_throw_iae(env, "empty byte arrays are not valid input");
+      return;
     }
 
   /* Fetch a pointer to the jbyteArray, viewed as a jbyte[]. The NULL
