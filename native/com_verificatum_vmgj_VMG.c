@@ -43,6 +43,18 @@
 #define VMGJ_JLONG_FROM_PTR(ptr) ((jlong)(intptr_t)(ptr))
 #define VMGJ_PTR_FROM_JLONG(type, value) ((type *)(intptr_t)(value))
 
+static int
+vmgj_throw_oom(JNIEnv *env, const char *message)
+{
+  jclass exceptionClass = (*env)->FindClass(env, "java/lang/OutOfMemoryError");
+  if (exceptionClass != NULL)
+    {
+      (*env)->ThrowNew(env, exceptionClass, message);
+      (*env)->DeleteLocalRef(env, exceptionClass);
+    }
+  return 0;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -211,8 +223,8 @@ extern "C" {
 
     if (tablePtr == NULL)
       {
-        fprintf(stderr, "VMGJ fatal: malloc() failed for fpowm table\n");
-        abort();
+        vmgj_throw_oom(env, "malloc() failed for fpowm table");
+        return 0;
       }
 
     VMGJ_UNUSED(clazz);
@@ -321,8 +333,9 @@ extern "C" {
         (gmpmee_millerrabin_state *)malloc(sizeof(gmpmee_millerrabin_state));
       if (statePtr == NULL)
         {
-          fprintf(stderr, "VMGJ fatal: malloc() failed for Miller-Rabin state\n");
-          abort();
+          mpz_clear(n);
+          vmgj_throw_oom(env, "malloc() failed for Miller-Rabin state");
+          return 0;
         }
       gmpmee_millerrabin_init(*statePtr, n);
     }
@@ -431,9 +444,9 @@ extern "C" {
         malloc(sizeof(gmpmee_millerrabin_safe_state));
       if (statePtr == NULL)
         {
-          fprintf(stderr,
-                  "VMGJ fatal: malloc() failed for safe Miller-Rabin state\n");
-          abort();
+          mpz_clear(n);
+          vmgj_throw_oom(env, "malloc() failed for safe Miller-Rabin state");
+          return 0;
         }
       gmpmee_millerrabin_safe_init(*statePtr, n);
     }
