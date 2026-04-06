@@ -44,6 +44,7 @@ static int
 vmgj_throw_iae(JNIEnv *env, const char *message)
 {
   jclass exceptionClass = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+  if (exceptionClass != NULL)
     {
       (*env)->ThrowNew(env, exceptionClass, message);
       (*env)->DeleteLocalRef(env, exceptionClass);
@@ -51,7 +52,7 @@ vmgj_throw_iae(JNIEnv *env, const char *message)
   return 0;
 }
 
-void
+int
 jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
 {
 
@@ -59,12 +60,16 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
   jbyte *cBytes;
   mpz_t tmp;
 
+  if (javaBytes == NULL)
+    {
+      return vmgj_throw_iae(env, "null byte arrays are not valid input");
+    }
+
   /* Find length in bytes of the jbyteArray. */
   byte_len = (*env)->GetArrayLength(env, javaBytes);
   if (byte_len <= 0)
     {
-      vmgj_throw_iae(env, "empty byte arrays are not valid input");
-      return;
+      return vmgj_throw_iae(env, "empty byte arrays are not valid input");
     }
 
   /* Fetch a pointer to the jbyteArray, viewed as a jbyte[]. The NULL
@@ -73,8 +78,7 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
   cBytes = (*env)->GetByteArrayElements(env, javaBytes, NULL);
   if (cBytes == NULL)
     {
-      vmgj_throw_oom(env, "GetByteArrayElements() failed for input bytes");
-      return;
+      return vmgj_throw_oom(env, "GetByteArrayElements() failed for input bytes");
     }
 
   /* Allocate space for result. */
@@ -104,9 +108,10 @@ jbyteArray_to_mpz_t(JNIEnv* env, mpz_t* gmpValue, jbyteArray javaBytes)
      do not require that the jbyteArray is copied back into JVM
      memory, even if the JVM has a separate native memory space. */
   (*env)->ReleaseByteArrayElements(env, javaBytes, cBytes, JNI_ABORT);
+  return 1;
 }
 
-void mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
+int mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
 {
 
   size_t byte_len;
@@ -122,8 +127,7 @@ void mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
   *javaBytes = (*env)->NewByteArray(env, byte_len);
   if (*javaBytes == NULL)
     {
-      vmgj_throw_oom(env, "NewByteArray() failed");
-      return;
+      return vmgj_throw_oom(env, "NewByteArray() failed");
     }
 
   /* Fetch a pointer to the java byte array, viewed as a jbyte
@@ -131,8 +135,7 @@ void mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
   cBytes = (*env)->GetByteArrayElements(env, *javaBytes, NULL);
   if (cBytes == NULL)
     {
-      vmgj_throw_oom(env, "GetByteArrayElements() failed for output bytes");
-      return;
+      return vmgj_throw_oom(env, "GetByteArrayElements() failed for output bytes");
     }
 
   /* If the integer gmpValue is negative we add the smallest integer
@@ -173,4 +176,5 @@ void mpz_t_to_jbyteArray(JNIEnv* env, jbyteArray* javaBytes, mpz_t gmpValue)
   /* Release our handle to the java bytes. Force "copy" of the bytes
      into JVM memory space only if needed. */
   (*env)->ReleaseByteArrayElements(env, *javaBytes, cBytes, 0);
+  return 1;
 }

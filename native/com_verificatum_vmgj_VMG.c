@@ -85,31 +85,64 @@ extern "C" {
     mpz_t exponent;
     mpz_t modulus;
     mpz_t result;
+    int basis_init = 0;
+    int exponent_init = 0;
+    int modulus_init = 0;
+    int result_init = 0;
 
-    jbyteArray javaResult;
+    jbyteArray javaResult = NULL;
 
     VMGJ_UNUSED(clazz);
 
     /* Translate jbyteArray-parameters to their corresponding GMP
        mpz_t-elements. */
-    jbyteArray_to_mpz_t(env, &basis, javaBasis);
-    jbyteArray_to_mpz_t(env, &exponent, javaExponent);
-    jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    basis_init = jbyteArray_to_mpz_t(env, &basis, javaBasis);
+    if (!basis_init)
+      {
+        goto powm_cleanup;
+      }
+    exponent_init = jbyteArray_to_mpz_t(env, &exponent, javaExponent);
+    if (!exponent_init)
+      {
+        goto powm_cleanup;
+      }
+    modulus_init = jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    if (!modulus_init)
+      {
+        goto powm_cleanup;
+      }
 
     /* Compute modular exponentiation. */
     mpz_init(result);
+    result_init = 1;
 
     mpz_powm(result, basis, exponent, modulus);
 
     /* Translate result back to jbyteArray (this also allocates the
        result array on the JVM heap). */
-    mpz_t_to_jbyteArray(env, &javaResult, result);
+    if (!mpz_t_to_jbyteArray(env, &javaResult, result))
+      {
+        goto powm_cleanup;
+      }
 
     /* Deallocate resources. */
-    mpz_clear(result);
-    mpz_clear(modulus);
-    mpz_clear(exponent);
-    mpz_clear(basis);
+  powm_cleanup:
+    if (result_init)
+      {
+        mpz_clear(result);
+      }
+    if (modulus_init)
+      {
+        mpz_clear(modulus);
+      }
+    if (exponent_init)
+      {
+        mpz_clear(exponent);
+      }
+    if (basis_init)
+      {
+        mpz_clear(basis);
+      }
 
     return javaResult;
   }
@@ -128,28 +161,61 @@ extern "C" {
     mpz_t b;
     mpz_t modulus;
     mpz_t result;
-    jbyteArray javaResult;
+    int a_init = 0;
+    int b_init = 0;
+    int modulus_init = 0;
+    int result_init = 0;
+    jbyteArray javaResult = NULL;
 
     VMGJ_UNUSED(clazz);
 
     /* Convert inputs to GMP integers. */
-    jbyteArray_to_mpz_t(env, &a, javaA);
-    jbyteArray_to_mpz_t(env, &b, javaB);
-    jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    a_init = jbyteArray_to_mpz_t(env, &a, javaA);
+    if (!a_init)
+      {
+        goto modmul_cleanup;
+      }
+    b_init = jbyteArray_to_mpz_t(env, &b, javaB);
+    if (!b_init)
+      {
+        goto modmul_cleanup;
+      }
+    modulus_init = jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    if (!modulus_init)
+      {
+        goto modmul_cleanup;
+      }
 
     /* Compute (a * b) mod modulus. */
     mpz_init(result);
+    result_init = 1;
     mpz_mul(result, a, b);
     mpz_mod(result, result, modulus);
 
     /* Convert result back to Java byte[]. */
-    mpz_t_to_jbyteArray(env, &javaResult, result);
+    if (!mpz_t_to_jbyteArray(env, &javaResult, result))
+      {
+        goto modmul_cleanup;
+      }
 
     /* Cleanup. */
-    mpz_clear(result);
-    mpz_clear(modulus);
-    mpz_clear(b);
-    mpz_clear(a);
+  modmul_cleanup:
+    if (result_init)
+      {
+        mpz_clear(result);
+      }
+    if (modulus_init)
+      {
+        mpz_clear(modulus);
+      }
+    if (b_init)
+      {
+        mpz_clear(b);
+      }
+    if (a_init)
+      {
+        mpz_clear(a);
+      }
 
     return javaResult;
   }
@@ -166,56 +232,125 @@ extern "C" {
   {
 
     int i;
-    mpz_t *bases;
-    mpz_t *exponents;
+    mpz_t *bases = NULL;
+    mpz_t *exponents = NULL;
     mpz_t modulus;
     mpz_t result;
+    int bases_init = 0;
+    int exponents_init = 0;
+    int modulus_init = 0;
+    int result_init = 0;
 
-    jbyteArray javaResult;
+    jbyteArray javaResult = NULL;
     jbyteArray javaBase;
     jbyteArray javaExponent;
 
     /* Extract number of bases/exponents. */
     jsize numberOfBases = (*env)->GetArrayLength(env, javaBases);
+    if ((*env)->ExceptionCheck(env))
+      {
+        return NULL;
+      }
 
     VMGJ_UNUSED(clazz);
 
     /* Convert exponents represented as array of byte[] to array of
        mpz_t. */
     bases = gmpmee_array_alloc(numberOfBases);
+    if (bases == NULL)
+      {
+        vmgj_throw_oom(env, "gmpmee_array_alloc() failed for bases");
+        goto spowm_cleanup;
+      }
     for (i = 0; i < numberOfBases; i++)
       {
         javaBase = (jbyteArray)(*env)->GetObjectArrayElement(env, javaBases, i);
-        jbyteArray_to_mpz_t(env, &(bases[i]), javaBase);
-        (*env)->DeleteLocalRef(env, javaBase);
+        if ((*env)->ExceptionCheck(env))
+          {
+            goto spowm_cleanup;
+          }
+        if (!jbyteArray_to_mpz_t(env, &(bases[i]), javaBase))
+          {
+            if (javaBase != NULL)
+              {
+                (*env)->DeleteLocalRef(env, javaBase);
+              }
+            goto spowm_cleanup;
+          }
+        bases_init++;
+        if (javaBase != NULL)
+          {
+            (*env)->DeleteLocalRef(env, javaBase);
+          }
       }
 
     /* Convert exponents represented as array of byte[] to an array of
        mpz_t. */
     exponents = gmpmee_array_alloc(numberOfBases);
+    if (exponents == NULL)
+      {
+        vmgj_throw_oom(env, "gmpmee_array_alloc() failed for exponents");
+        goto spowm_cleanup;
+      }
     for (i = 0; i < numberOfBases; i++)
       {
         javaExponent =
           (jbyteArray)(*env)->GetObjectArrayElement(env, javaExponents, i);
-        jbyteArray_to_mpz_t(env, &(exponents[i]), javaExponent);
-        (*env)->DeleteLocalRef(env, javaExponent);
+        if ((*env)->ExceptionCheck(env))
+          {
+            goto spowm_cleanup;
+          }
+        if (!jbyteArray_to_mpz_t(env, &(exponents[i]), javaExponent))
+          {
+            if (javaExponent != NULL)
+              {
+                (*env)->DeleteLocalRef(env, javaExponent);
+              }
+            goto spowm_cleanup;
+          }
+        exponents_init++;
+        if (javaExponent != NULL)
+          {
+            (*env)->DeleteLocalRef(env, javaExponent);
+          }
       }
 
     /* Convert modulus represented as a byte[] to a mpz_t. */
-    jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    modulus_init = jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    if (!modulus_init)
+      {
+        goto spowm_cleanup;
+      }
 
     /* Call GMP's exponentiated product function. */
     mpz_init(result);
+    result_init = 1;
     gmpmee_spowm(result, bases, exponents, numberOfBases, modulus);
 
     /* Convert result to a jbyteArray. */
-    mpz_t_to_jbyteArray(env, &javaResult, result);
+    if (!mpz_t_to_jbyteArray(env, &javaResult, result))
+      {
+        goto spowm_cleanup;
+      }
 
     /* Deallocate resources. */
-    mpz_clear(result);
-    mpz_clear(modulus);
-    gmpmee_array_clear_dealloc(exponents, numberOfBases);
-    gmpmee_array_clear_dealloc(bases, numberOfBases);
+  spowm_cleanup:
+    if (result_init)
+      {
+        mpz_clear(result);
+      }
+    if (modulus_init)
+      {
+        mpz_clear(modulus);
+      }
+    if (exponents != NULL)
+      {
+        gmpmee_array_clear_dealloc(exponents, exponents_init);
+      }
+    if (bases != NULL)
+      {
+        gmpmee_array_clear_dealloc(bases, bases_init);
+      }
 
     return javaResult;
   }
@@ -232,6 +367,8 @@ extern "C" {
   {
     mpz_t basis;
     mpz_t modulus;
+    int basis_init = 0;
+    int modulus_init = 0;
     gmpmee_fpowm_tab *tablePtr =
       (gmpmee_fpowm_tab *)malloc(sizeof(gmpmee_fpowm_tab));
 
@@ -243,15 +380,37 @@ extern "C" {
 
     VMGJ_UNUSED(clazz);
 
-    jbyteArray_to_mpz_t(env, &basis, javaBasis);
-    jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    basis_init = jbyteArray_to_mpz_t(env, &basis, javaBasis);
+    if (!basis_init)
+      {
+        goto fpowm_precomp_cleanup;
+      }
+    modulus_init = jbyteArray_to_mpz_t(env, &modulus, javaModulus);
+    if (!modulus_init)
+      {
+        goto fpowm_precomp_cleanup;
+      }
 
     gmpmee_fpowm_init_precomp(*tablePtr, basis, modulus,
                               (int)javaBlockWidth, (int)javaExponentBitlen);
     mpz_clear(modulus);
+    modulus_init = 0;
     mpz_clear(basis);
+    basis_init = 0;
 
     return VMGJ_JLONG_FROM_PTR(tablePtr);
+
+  fpowm_precomp_cleanup:
+    if (modulus_init)
+      {
+        mpz_clear(modulus);
+      }
+    if (basis_init)
+      {
+        mpz_clear(basis);
+      }
+    free(tablePtr);
+    return 0;
   }
 
 
@@ -265,8 +424,10 @@ extern "C" {
   {
     mpz_t exponent;
     mpz_t result;
+    int exponent_init = 0;
+    int result_init = 0;
 
-    jbyteArray javaResult;
+    jbyteArray javaResult = NULL;
 
     VMGJ_UNUSED(clazz);
     if (javaTablePtr == 0)
@@ -275,8 +436,13 @@ extern "C" {
         return NULL;
       }
 
-    jbyteArray_to_mpz_t(env, &exponent, javaExponent);
+    exponent_init = jbyteArray_to_mpz_t(env, &exponent, javaExponent);
+    if (!exponent_init)
+      {
+        return NULL;
+      }
     mpz_init(result);
+    result_init = 1;
 
     gmpmee_fpowm(result,
           *VMGJ_PTR_FROM_JLONG(gmpmee_fpowm_tab, javaTablePtr),
@@ -284,10 +450,20 @@ extern "C" {
 
     /* Translate result back to jbyteArray (this also allocates the
        result array on the JVM heap). */
-    mpz_t_to_jbyteArray(env, &javaResult, result);
+    if (!mpz_t_to_jbyteArray(env, &javaResult, result))
+      {
+        goto fpowm_cleanup;
+      }
 
-    mpz_clear(result);
-    mpz_clear(exponent);
+  fpowm_cleanup:
+    if (result_init)
+      {
+        mpz_clear(result);
+      }
+    if (exponent_init)
+      {
+        mpz_clear(exponent);
+      }
 
     return javaResult;
   }
@@ -323,16 +499,33 @@ extern "C" {
     mpz_t op;
     mpz_t oddPrime;
     int symbol;
+    int op_init = 0;
+    int odd_prime_init = 0;
 
     VMGJ_UNUSED(clazz);
 
-    jbyteArray_to_mpz_t(env, &op, javaOp);
-    jbyteArray_to_mpz_t(env, &oddPrime, javaOddPrime);
+    op_init = jbyteArray_to_mpz_t(env, &op, javaOp);
+    if (!op_init)
+      {
+        return 0;
+      }
+    odd_prime_init = jbyteArray_to_mpz_t(env, &oddPrime, javaOddPrime);
+    if (!odd_prime_init)
+      {
+        mpz_clear(op);
+        return 0;
+      }
 
     symbol = mpz_legendre(op, oddPrime);
 
-    mpz_clear(op);
-    mpz_clear(oddPrime);
+    if (op_init)
+      {
+        mpz_clear(op);
+      }
+    if (odd_prime_init)
+      {
+        mpz_clear(oddPrime);
+      }
 
     return (jint)symbol;
   }
@@ -347,10 +540,15 @@ extern "C" {
   {
     mpz_t n;
     gmpmee_millerrabin_state *statePtr = (void*)0;
+    int n_init = 0;
 
     VMGJ_UNUSED(clazz);
 
-    jbyteArray_to_mpz_t(env, &n, javaN);
+    n_init = jbyteArray_to_mpz_t(env, &n, javaN);
+    if (!n_init)
+      {
+        return 0;
+      }
 
     if (search || gmpmee_millerrabin_trial(n)) {
       statePtr =
@@ -404,6 +602,7 @@ extern "C" {
   {
     mpz_t base;
     int res;
+    int base_init = 0;
 
     VMGJ_UNUSED(clazz);
     if (javaStatePtr == 0)
@@ -412,7 +611,11 @@ extern "C" {
         return 0;
       }
 
-    jbyteArray_to_mpz_t(env, &base, javaBase);
+    base_init = jbyteArray_to_mpz_t(env, &base, javaBase);
+    if (!base_init)
+      {
+        return 0;
+      }
     res = gmpmee_millerrabin_once(
       *VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state, javaStatePtr),
       base);
@@ -452,7 +655,7 @@ extern "C" {
   Java_com_verificatum_vmgj_VMG_millerrabin_1current
   (JNIEnv *env, jclass clazz, jlong javaStatePtr)
   {
-    jbyteArray javaResult;
+    jbyteArray javaResult = NULL;
 
     VMGJ_UNUSED(env);
     VMGJ_UNUSED(clazz);
@@ -462,9 +665,12 @@ extern "C" {
         return NULL;
       }
 
-    mpz_t_to_jbyteArray(env, &javaResult,
-                        (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state,
-                                              javaStatePtr))->n);
+    if (!mpz_t_to_jbyteArray(env, &javaResult,
+                             (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_state,
+                                                   javaStatePtr))->n))
+      {
+        return NULL;
+      }
     return javaResult;
   }
 
@@ -479,10 +685,15 @@ extern "C" {
   {
     mpz_t n;
     gmpmee_millerrabin_safe_state *statePtr = (void*)0;
+    int n_init = 0;
 
     VMGJ_UNUSED(clazz);
 
-    jbyteArray_to_mpz_t(env, &n, javaN);
+    n_init = jbyteArray_to_mpz_t(env, &n, javaN);
+    if (!n_init)
+      {
+        return 0;
+      }
 
     if (search || gmpmee_millerrabin_safe_trial(n)) {
       statePtr = (gmpmee_millerrabin_safe_state *)
@@ -538,6 +749,7 @@ extern "C" {
 
     mpz_t base;
     int res;
+    int base_init = 0;
 
     VMGJ_UNUSED(clazz);
     if (javaStatePtr == 0)
@@ -547,7 +759,11 @@ extern "C" {
         return 0;
       }
 
-    jbyteArray_to_mpz_t(env, &base, javaBase);
+    base_init = jbyteArray_to_mpz_t(env, &base, javaBase);
+    if (!base_init)
+      {
+        return 0;
+      }
 
     if (((int)javaIndex) % 2 == 0)
       {
@@ -600,7 +816,7 @@ extern "C" {
   Java_com_verificatum_vmgj_VMG_millerrabin_1current_1safe
   (JNIEnv *env, jclass clazz, jlong javaStatePtr)
   {
-    jbyteArray javaResult;
+    jbyteArray javaResult = NULL;
 
     VMGJ_UNUSED(clazz);
     if (javaStatePtr == 0)
@@ -609,9 +825,12 @@ extern "C" {
                                  "Invalid native handle in millerrabin_current_safe");
         return NULL;
       }
-    mpz_t_to_jbyteArray(env, &javaResult,
-                        (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state,
-                                              javaStatePtr))->nstate->n);
+    if (!mpz_t_to_jbyteArray(env, &javaResult,
+                             (*VMGJ_PTR_FROM_JLONG(gmpmee_millerrabin_safe_state,
+                                                   javaStatePtr))->nstate->n))
+      {
+        return NULL;
+      }
     return javaResult;
   }
 
