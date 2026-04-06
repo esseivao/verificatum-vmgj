@@ -28,6 +28,8 @@
 package com.verificatum.vmgj;
 
 import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.Locale;
 
 // We use C style to name things in this file, since it should
 // correspond to the native code.
@@ -51,6 +53,11 @@ import java.math.BigInteger;
 public final class VMG {
 
     /**
+     * Version string baked into the generated Java source.
+     */
+    private static final String VERSION = "M4_VERSION";
+
+    /**
      * Avoid accidental instantiation.
      */
     private VMG() {
@@ -60,7 +67,60 @@ public final class VMG {
      * Load native code upon loading this class.
      */
     static {
-        System.loadLibrary("vmgj-M4_VERSION");
+        loadNativeLibrary();
+    }
+
+    /**
+     * Loads the native library using the platform-appropriate
+     * library basename.
+     */
+    private static void loadNativeLibrary() {
+        final String osName =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        final String[] candidates = nativeLibraryCandidates(osName);
+
+        UnsatisfiedLinkError firstError = null;
+        for (int i = 0; i < candidates.length; i++) {
+            try {
+                System.loadLibrary(candidates[i]);
+                return;
+            } catch (UnsatisfiedLinkError ule) {
+                if (firstError == null) {
+                    firstError = ule;
+                }
+            }
+        }
+
+        final UnsatisfiedLinkError ule =
+            new UnsatisfiedLinkError("Failed to load VMGJ native library."
+                                     + " Tried: "
+                                     + Arrays.toString(candidates));
+        if (firstError != null) {
+            ule.initCause(firstError);
+        }
+        throw ule;
+    }
+
+    /**
+     * Returns the native-library basenames to try on this platform.
+     *
+     * @param osName Lower-case operating-system name.
+     * @return Candidate native-library basenames.
+     */
+    private static String[] nativeLibraryCandidates(final String osName) {
+        if (osName.indexOf("win") >= 0) {
+            return new String[] {
+                "libvmgj-1",
+                "libvmgj-" + VERSION.replace('.', '-'),
+                "vmgj-" + VERSION.replace('.', '-'),
+                "vmgj-" + VERSION,
+                "vmgj"
+            };
+        }
+        return new String[] {
+            "vmgj",
+            "vmgj-" + VERSION
+        };
     }
 
     /**
