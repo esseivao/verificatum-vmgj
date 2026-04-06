@@ -27,8 +27,8 @@
 
 package com.verificatum.vmgj;
 
+import com.sun.management.OperatingSystemMXBean;
 import java.lang.management.ManagementFactory;
-import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -64,11 +64,6 @@ public class FpowmTab implements AutoCloseable {
      * Default upper bound for the estimated size of one table.
      */
     private static final long DEFAULT_MAX_TABLE_BYTES = 256L * MEBIBYTE;
-
-    /**
-     * Default upper bound for the estimated size of all live tables.
-     */
-    private static final long DEFAULT_MAX_TOTAL_BYTES = 512L * MEBIBYTE;
 
     /**
      * Upper bound needed to safely evaluate 2^blockWidth using a long.
@@ -125,6 +120,12 @@ public class FpowmTab implements AutoCloseable {
      * invoking the table.
      * @return Conservative estimate of the native bytes consumed by
      * the precomputation table.
+    *
+    * <p>
+    * The current estimate uses the modulus bit length and block
+    * width. It does not currently scale with {@code exponentBitlen},
+    * because the existing fixed-base precomputation shape in VMGJ is
+    * dominated by the modulus-sized precomputed values.
      */
     public static long estimateTableBytes(final BigInteger modulus,
                                           final int blockWidth,
@@ -318,18 +319,9 @@ public class FpowmTab implements AutoCloseable {
                                                + "=<bytes>");
         }
 
-        final long freePhysicalMemory = detectPhysicalMemoryBytes("getFreePhysicalMemorySize");
-        if (freePhysicalMemory > 0 && estimatedBytes > freePhysicalMemory) {
-            throw new IllegalStateException("Estimated fixed-base table size "
-                                            + estimatedBytes
-                                            + " bytes exceeds currently free physical memory "
-                                            + freePhysicalMemory
-                                            + " bytes");
-        }
-
         final long maxTotalBytes =
             getConfiguredLimit(MAX_TOTAL_BYTES_PROPERTY,
-                               DEFAULT_MAX_TOTAL_BYTES);
+                               Long.MAX_VALUE);
         final long runtimeTotalCap = getRuntimeTotalCapBytes();
         final long effectiveMaxTotalBytes =
             runtimeTotalCap > 0 ? Math.min(maxTotalBytes, runtimeTotalCap)
@@ -361,7 +353,18 @@ public class FpowmTab implements AutoCloseable {
      * @param estimatedBytes Estimated native bytes for the table.
      */
     private static void releaseReservedTableBytes(final long estimatedBytes) {
-        RESERVED_TABLE_BYTES.addAndGet(-estimatedBytes);
+        while (true) {
+            final long reserved = RESERVED_TABLE_BYTES.get();
+            final long updated = reserved - estimatedBytes;
+
+            if (updated < 0) {
+                RESERVED_TABLE_BYTES.compareAndSet(reserved, 0);
+                return;
+            }
+            if (RESERVED_TABLE_BYTES.compareAndSet(reserved, updated)) {
+                return;
+            }
+        }
     }
 
     /**
@@ -401,7 +404,7 @@ public class FpowmTab implements AutoCloseable {
      * physical memory is unavailable.
      */
     private static long getRuntimeTotalCapBytes() {
-        final long totalPhysicalMemory = detectPhysicalMemoryBytes("getTotalPhysicalMemorySize");
+        final long totalPhysicalMemory = detectTotalPhysicalMemoryBytes();
 
         if (totalPhysicalMemory <= 0) {
             return 0;
@@ -413,32 +416,34 @@ public class FpowmTab implements AutoCloseable {
     }
 
     /**
-     * Detects a physical memory metric from the JVM operating-system
-     * management bean.
+     * Best-effort detection of total physical memory from the JVM
+     * operating-system bean.
      *
-     * @param methodName Name of the zero-argument method to invoke.
-     * @return Reported memory metric in bytes, or {@code -1} if not
-     * available.
+     * <p>
+     * This method is advisory only and is not used as a correctness
+     * requirement. If unavailable, VMGJ falls back to configured
+     * limits only.
+     *
+     * @return Detected total physical memory in bytes, or {@code -1}
+     * if unavailable.
      */
-    private static long detectPhysicalMemoryBytes(final String methodName) {
+    private static long detectTotalPhysicalMemoryBytes() {
         try {
-            final Object osBean = ManagementFactory.getOperatingSystemMXBean();
-            final Method method = osBean.getClass().getMethod(methodName);
-            method.setAccessible(true);
+            final java.lang.management.OperatingSystemMXBean osBean =
+                ManagementFactory.getOperatingSystemMXBean();
 
-            final Object value = method.invoke(osBean);
-            if (value instanceof Long) {
-                final long memory = ((Long) value).longValue();
-                if (memory > 0) {
-                    return memory;
+            if (osBean instanceof OperatingSystemMXBean) {
+                final long total =
+                    ((OperatingSystemMXBean) osBean)
+                    .getTotalMemorySize();
+                if (total > 0) {
+                    return total;
                 }
             }
-        } catch (ReflectiveOperationException roe) {
             return -1;
         } catch (RuntimeException re) {
             return -1;
         }
-        return -1;
     }
 
     /**
