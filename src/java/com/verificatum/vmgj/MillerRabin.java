@@ -144,6 +144,12 @@ public class MillerRabin {
      * <code>true</code> otherwise.
      */
     public boolean once(final BigInteger base, final int index) {
+        if (primality) {
+            if (index != 0) {
+                throw new IllegalArgumentException("index is only supported for safe-primality testing");
+            }
+            return VMG.millerrabin_once(statePtr, base.toByteArray()) == 1;
+        }
         return VMG.millerrabin_safe_once(statePtr,
                                          base.toByteArray(),
                                          index) == 1;

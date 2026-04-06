@@ -348,6 +348,31 @@ public final class TestVMG {
     }
 
     /**
+     * Tests Java-side Miller-Rabin overload guards.
+     */
+    public static void test_millerrabin_guards() {
+
+        final MillerRabin mr = new MillerRabin(BigInteger.valueOf(5L),
+                                               true,
+                                               false);
+        try {
+            assert mr.once(BigInteger.valueOf(2L), 0) == mr.once(BigInteger.valueOf(2L))
+                : "Failed to preserve ordinary once() behavior for index 0!";
+
+            boolean invalidThrown = false;
+            try {
+                mr.once(BigInteger.valueOf(2L), 1);
+            } catch (IllegalArgumentException iae) {
+                invalidThrown =
+                    iae.getMessage().indexOf("safe-primality") >= 0;
+            }
+            assert invalidThrown : "Failed to reject indexed primality checks!";
+        } finally {
+            mr.done();
+        }
+    }
+
+    /**
      * Tests next prime.
      *
      * @param bitLength Number of bits of integers in the operation
@@ -482,6 +507,8 @@ public final class TestVMG {
         test_legendre(bitLength, milliSecs);
         System.out.println("prime (test random integers for primality)");
         test_millerrabin_prime(bitLength, milliSecs);
+        System.out.println("millerrabin guards (Java-side overload validation)");
+        test_millerrabin_guards();
         System.out.println("nextprime (find next prime)");
         test_millerrabin_nextprime(100, milliSecs);
         System.out.println("nextsafeprime (find next and check safe prime "
