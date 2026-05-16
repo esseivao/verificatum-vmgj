@@ -107,6 +107,7 @@ jobs:
             libdir="target/cmake-build"
           fi
           java -ea \
+            --enable-native-access=ALL-UNNAMED \
             -Djava.library.path="${libdir}:${RUNNER_TEMP}/vmgj-deps/lib" \
             -cp target/vmgj-1.4.0.jar \
             com.verificatum.vmgj.TestVMG 256
@@ -175,9 +176,16 @@ jobs:
             -Dcmake.enable.coverage=ON
 
       - name: Run VMGJ smoke test
+        shell: bash
         run: |
+          set -euo pipefail
+          libdir="target/cmake-build/Debug"
+          if [[ ! -d "${libdir}" ]]; then
+            libdir="target/cmake-build"
+          fi
           java -ea \
-            -Djava.library.path="target/cmake-build/Debug:${RUNNER_TEMP}/vmgj-deps/lib" \
+            --enable-native-access=ALL-UNNAMED \
+            -Djava.library.path="${libdir}:${RUNNER_TEMP}/vmgj-deps/lib" \
             -cp target/vmgj-1.4.0.jar \
             com.verificatum.vmgj.TestVMG 256
 
