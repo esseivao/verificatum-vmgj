@@ -113,8 +113,10 @@ jobs:
               asan_runtime="$(gcc -print-file-name=libasan.so)"
             fi
             export LD_PRELOAD="${asan_runtime}${LD_PRELOAD:+:${LD_PRELOAD}}"
-            export ASAN_OPTIONS="detect_leaks=1:halt_on_error=1"
-            export LSAN_OPTIONS="suppressions=${GITHUB_WORKSPACE}/lsan.supp"
+            # LeakSanitizer reports allocations owned by the JVM/runtime in
+            # this JNI smoke test. Keep ASan active, but disable leak checks
+            # for the Java launcher process.
+            export ASAN_OPTIONS="detect_leaks=0:halt_on_error=1"
           fi
 
           java -ea \
@@ -162,6 +164,7 @@ jobs:
             libgmp-dev \
             maven \
             ninja-build \
+            llvm \
             python3
 
       - name: Install GMPMEE release asset
@@ -204,14 +207,21 @@ jobs:
         run: |
           echo "=== Coverage data files ==="
           find target/cmake-build -name '*.gcno' -o -name '*.gcda'
+          cat > target/llvm-gcov.sh <<'EOF'
+          #!/usr/bin/env bash
+          exec llvm-cov gcov "$@"
+          EOF
+          chmod +x target/llvm-gcov.sh
           lcov --capture \
             --directory target/cmake-build \
             --base-directory . \
+            --gcov-tool "$PWD/target/llvm-gcov.sh" \
             --output-file target/coverage.raw.info
           lcov --remove target/coverage.raw.info \
             '/usr/*' \
             '*/target/*/CMakeFiles/*' \
             --ignore-errors unused \
+            --gcov-tool "$PWD/target/llvm-gcov.sh" \
             --output-file target/coverage.info
           lcov --list target/coverage.info
           genhtml target/coverage.info \
