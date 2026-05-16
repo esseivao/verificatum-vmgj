@@ -13,7 +13,7 @@ concurrency:
 env:
   JAVA_VERSION: "25"
   GMPMEE_VERSION: v3.0.0-b2
-  GMPMEE_HEADER_URL: https://raw.githubusercontent.com/esseivao/verificatum-gmpmee/v3.0.0-b2/gmpmee.h
+  GMPMEE_HEADER_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/gmpmee.h
   GMPMEE_LINUX_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.so.1
   GMPMEE_MACOS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.1.dylib
   GMPMEE_WINDOWS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee-1.dll
