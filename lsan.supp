@@ -1,0 +1,28 @@
+# =============================================
+# GMPMEE LSAN Suppression File
+# =============================================
+
+# GMP internal memory management (harmless in test harness)
+leak:__gmp_default_allocate
+leak:__gmp_default_reallocate
+leak:__gmpz_realloc
+leak:__gmp_randinit_mt_noseed
+leak:__gmp_randinit_mt
+
+# GMP random number state (used in tests)
+leak:__gmpz_urandomb
+leak:__gmpz_urandomm
+
+# Legacy test harness (gmpmee.c) - not production code
+leak:test_spowm_modulus_bitlen
+leak:test_spowm
+leak:test_fpowm
+leak:main
+
+# Internal GMP functions called during tests
+leak:__gmpz_mul
+leak:__gmpz_powm
+leak:__gmpz_set_ui
+
+# Any remaining small GMP limb allocations in test context
+leak:*gmp*

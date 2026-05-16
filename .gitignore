@@ -1,0 +1,37 @@
+# Default text normalization
+* text=auto eol=lf
+
+# Source and build metadata
+*.c text eol=lf
+*.h text eol=lf
+*.ac text eol=lf
+*.am text eol=lf
+*.m4 text eol=lf
+*.cmake text eol=lf
+*.in text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.supp text eol=lf
+CMakeLists.txt text eol=lf
+Makefile.build text eol=lf
+
+# Scripts
+*.sh text eol=lf
+*.py text eol=lf
+
+# Documentation
+*.md text eol=lf
+AUTHORS text eol=lf
+NEWS text eol=lf
+
+# Binary/build artifacts
+*.o binary
+*.lo binary
+*.a binary
+*.la text eol=lf
+*.so binary
+*.so.* binary
+*.dll binary
+*.dll.a binary
+*.exe binary

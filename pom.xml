@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.verificatum</groupId>
+    <artifactId>vmgj</artifactId>
+    <version>1.4.0</version>
+    <packaging>jar</packaging>
+
+    <name>Verificatum VMGJ</name>
+    <description>JNI wrapper for GMP and GMPMEE modular arithmetic</description>
+    <url>https://www.verificatum.org/</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/license/mit/</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Verificatum Project</name>
+            <email>info@verificatum.com</email>
+            <organization>Verificatum Project</organization>
+        </developer>
+    </developers>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <maven.compiler.release>25</maven.compiler.release>
+
+        <!-- CMake remains the native build authority. Maven only drives it. -->
+        <cmake.executable>cmake</cmake.executable>
+        <cmake.build.dir>${project.build.directory}/cmake-build</cmake.build.dir>
+        <cmake.build.type>Release</cmake.build.type>
+        <cmake.build.testing>ON</cmake.build.testing>
+        <cmake.build.shared.libs>ON</cmake.build.shared.libs>
+        <cmake.enable.sanitizers>OFF</cmake.enable.sanitizers>
+        <cmake.enable.coverage>OFF</cmake.enable.coverage>
+        <cmake.generated.java.dir>${cmake.build.dir}/generated/java</cmake.generated.java.dir>
+        <cmake.generated.manifest>${cmake.build.dir}/MANIFEST.MF</cmake.generated.manifest>
+        <native.resource.dir>META-INF/native</native.resource.dir>
+
+        <build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
+        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+        <maven-clean-plugin.version>3.4.1</maven-clean-plugin.version>
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
+        <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
+        <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
+    </properties>
+
+    <build>
+        <!-- Historical source layout; VMG.java is generated from VMG.magic by CMake. -->
+        <sourceDirectory>${project.basedir}/src/java</sourceDirectory>
+
+        <plugins>
+            <plugin>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>${maven-clean-plugin.version}</version>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>${cmake.build.dir}</directory>
+                        </fileset>
+                    </filesets>
+                </configuration>
+            </plugin>
+
+            <!--
+                Maven calls CMake in two steps:
+                1. configure the native build tree;
+                2. ask CMake for generated Java/manifest files before javac runs.
+
+                The actual JNI library is built later, after Maven has compiled
+                Java classes. This keeps the top-level command familiar:
+                    mvn clean compile
+                    mvn package
+                    mvn install
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>cmake-configure</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cmake.executable}</executable>
+                            <arguments>
+                                <argument>-S</argument>
+                                <argument>${project.basedir}</argument>
+                                <argument>-B</argument>
+                                <argument>${cmake.build.dir}</argument>
+                                <argument>-DCMAKE_BUILD_TYPE=${cmake.build.type}</argument>
+                                <argument>-DBUILD_TESTING=${cmake.build.testing}</argument>
+                                <argument>-DBUILD_SHARED_LIBS=${cmake.build.shared.libs}</argument>
+                                <argument>-DENABLE_SANITIZERS=${cmake.enable.sanitizers}</argument>
+                                <argument>-DENABLE_COVERAGE=${cmake.enable.coverage}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+
+                    <execution>
+                        <id>cmake-generate-java</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cmake.executable}</executable>
+                            <arguments>
+                                <argument>--build</argument>
+                                <argument>${cmake.build.dir}</argument>
+                                <argument>--target</argument>
+                                <argument>vmgj_generated_java</argument>
+                                <argument>--config</argument>
+                                <argument>${cmake.build.type}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+
+                    <execution>
+                        <id>cmake-generate-manifest</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cmake.executable}</executable>
+                            <arguments>
+                                <argument>--build</argument>
+                                <argument>${cmake.build.dir}</argument>
+                                <argument>--target</argument>
+                                <argument>vmgj_generated_manifest</argument>
+                                <argument>--config</argument>
+                                <argument>${cmake.build.type}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+
+                    <execution>
+                        <id>cmake-build-native</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cmake.executable}</executable>
+                            <arguments>
+                                <argument>--build</argument>
+                                <argument>${cmake.build.dir}</argument>
+                                <argument>--target</argument>
+                                <argument>vmgj</argument>
+                                <argument>--config</argument>
+                                <argument>${cmake.build.type}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>${build-helper-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>add-cmake-generated-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${cmake.generated.java.dir}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <showWarnings>true</showWarnings>
+                    <excludes>
+                        <!-- The checked-in file is legacy generated output; CMake generates the build input. -->
+                        <exclude>com/verificatum/vmgj/VMG.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!--
+                Embed native outputs in the Maven JAR under META-INF/native.
+                Runtime extraction/loading can be added later without changing
+                the native build contract.
+            -->
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>${maven-resources-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>copy-native-libraries</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/${native.resource.dir}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${cmake.build.dir}</directory>
+                                    <filtering>false</filtering>
+                                    <includes>
+                                        <include>**/*.dll</include>
+                                        <include>**/*.dylib</include>
+                                        <include>**/*.jnilib</include>
+                                        <include>**/*.so</include>
+                                        <include>**/*.so.*</include>
+                                    </includes>
+                                    <excludes>
+                                        <exclude>**/CMakeFiles/**</exclude>
+                                        <exclude>**/Testing/**</exclude>
+                                    </excludes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven-jar-plugin.version}</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${cmake.generated.manifest}</manifestFile>
+                        <manifestEntries>
+                            <Automatic-Module-Name>com.verificatum.vmgj</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <argLine>-Djava.library.path=${cmake.build.dir}</argLine>
+                    <includes>
+                        <include>**/Test*.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

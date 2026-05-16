@@ -1,0 +1,349 @@
+name: CI - VMGJ
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "25"
+  GMPMEE_VERSION: v3.0.0-b2
+  GMPMEE_HEADER_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/gmpmee.h
+  GMPMEE_LINUX_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.so.1
+  GMPMEE_MACOS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.1.dylib
+  GMPMEE_WINDOWS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee-1.dll
+
+jobs:
+  # ====================== Linux + macOS ======================
+  unix:
+    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        compiler: [ gcc, clang ]
+        build_type: [ Debug, Release ]
+        include:
+          - os: ubuntu-latest
+            compiler: clang
+            build_type: Debug
+            sanitizer: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            cmake \
+            curl \
+            libgmp-dev \
+            maven \
+            ninja-build \
+            python3
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew update
+          brew install cmake gmp maven ninja python
+
+      - name: Install GMPMEE release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deps_prefix="${RUNNER_TEMP}/vmgj-deps"
+          cmake_prefix="${deps_prefix}"
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/lib"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+
+          if [[ "${{ matrix.os }}" == macos* ]]; then
+            gmp_prefix="$(brew --prefix gmp)"
+            curl -fsSL "${GMPMEE_MACOS_URL}" -o "${deps_prefix}/lib/libgmpmee.1.dylib"
+            ln -sf libgmpmee.1.dylib "${deps_prefix}/lib/libgmpmee.dylib"
+            cmake_prefix="${cmake_prefix}:${gmp_prefix}"
+          else
+            curl -fsSL "${GMPMEE_LINUX_URL}" -o "${deps_prefix}/lib/libgmpmee.so.1"
+            ln -sf libgmpmee.so.1 "${deps_prefix}/lib/libgmpmee.so"
+          fi
+
+          echo "CMAKE_PREFIX_PATH=${cmake_prefix}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
+          echo "DYLD_LIBRARY_PATH=${deps_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
+
+      - name: Maven package
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          mvn -B package \
+            -Dcmake.build.type=${{ matrix.build_type }} \
+            -Dcmake.enable.sanitizers=${{ matrix.sanitizer == true }}
+
+      - name: Smoke test packaged artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          libdir="target/cmake-build/${{ matrix.build_type }}"
+          if [[ ! -d "${libdir}" ]]; then
+            libdir="target/cmake-build"
+          fi
+
+          if [[ "${{ matrix.sanitizer == true }}" == "true" ]]; then
+            asan_runtime="$(clang -print-file-name=libclang_rt.asan-x86_64.so)"
+            if [[ ! -f "${asan_runtime}" ]]; then
+              asan_runtime="$(gcc -print-file-name=libasan.so)"
+            fi
+            export LD_PRELOAD="${asan_runtime}${LD_PRELOAD:+:${LD_PRELOAD}}"
+            # LeakSanitizer reports allocations owned by the JVM/runtime in
+            # this JNI smoke test. Keep ASan active, but disable leak checks
+            # for the Java launcher process.
+            export ASAN_OPTIONS="detect_leaks=0:halt_on_error=1"
+          fi
+
+          java -ea \
+            --enable-native-access=ALL-UNNAMED \
+            -Djava.library.path="${libdir}:${RUNNER_TEMP}/vmgj-deps/lib" \
+            -cp target/vmgj-1.4.0.jar \
+            com.verificatum.vmgj.TestVMG 256
+
+      - name: Upload Maven artifacts
+        if: matrix.build_type == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmgj-${{ matrix.os }}-${{ matrix.compiler }}
+          path: |
+            target/*.jar
+            target/classes/META-INF/native/**
+          retention-days: 30
+
+  # ====================== Code Quality + Coverage ======================
+  quality:
+    name: Code Quality & Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            clang-tidy \
+            cmake \
+            cppcheck \
+            curl \
+            lcov \
+            libgmp-dev \
+            maven \
+            ninja-build \
+            llvm \
+            python3
+
+      - name: Install GMPMEE release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deps_prefix="${RUNNER_TEMP}/vmgj-deps"
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/lib"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+          curl -fsSL "${GMPMEE_LINUX_URL}" -o "${deps_prefix}/lib/libgmpmee.so.1"
+          ln -sf libgmpmee.so.1 "${deps_prefix}/lib/libgmpmee.so"
+
+          echo "CMAKE_PREFIX_PATH=${deps_prefix}" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
+
+      - name: Maven package with coverage flags
+        env:
+          CC: clang
+        run: |
+          mvn -B package \
+            -Dcmake.build.type=Debug \
+            -Dcmake.enable.coverage=ON
+
+      - name: Run VMGJ smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          libdir="target/cmake-build/Debug"
+          if [[ ! -d "${libdir}" ]]; then
+            libdir="target/cmake-build"
+          fi
+          java -ea \
+            --enable-native-access=ALL-UNNAMED \
+            -Djava.library.path="${libdir}:${RUNNER_TEMP}/vmgj-deps/lib" \
+            -cp target/vmgj-1.4.0.jar \
+            com.verificatum.vmgj.TestVMG 256
+
+      - name: Generate lcov Coverage Report
+        run: |
+          echo "=== Coverage data files ==="
+          find target/cmake-build -name '*.gcno' -o -name '*.gcda'
+          cat > target/llvm-gcov.sh <<'EOF'
+          #!/usr/bin/env bash
+          exec llvm-cov gcov "$@"
+          EOF
+          chmod +x target/llvm-gcov.sh
+          lcov --capture \
+            --directory target/cmake-build \
+            --base-directory . \
+            --gcov-tool "$PWD/target/llvm-gcov.sh" \
+            --output-file target/coverage.raw.info
+          lcov --remove target/coverage.raw.info \
+            '/usr/*' \
+            '*/target/*/CMakeFiles/*' \
+            --ignore-errors unused \
+            --gcov-tool "$PWD/target/llvm-gcov.sh" \
+            --output-file target/coverage.info
+          lcov --list target/coverage.info
+          genhtml target/coverage.info \
+            --output-directory target/coverage-report \
+            --title "VMGJ Native Code Coverage"
+
+      - name: Run clang-tidy through CMake
+        env:
+          CC: clang
+        run: |
+          cmake -S . \
+            -B target/cmake-tidy \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_PREFIX_PATH="${RUNNER_TEMP}/vmgj-deps" \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_C_CLANG_TIDY=clang-tidy
+          cmake --build target/cmake-tidy --target vmgj --verbose 2>&1 | tee target/clang-tidy.log
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=all --inconclusive --std=c11 \
+            -I native \
+            -I target/cmake-build/generated/native \
+            -I "${JAVA_HOME}/include" \
+            -I "${JAVA_HOME}/include/linux" \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            --suppress=variableScope \
+            --suppress=constParameterPointer \
+            --suppress=constParameter \
+            --suppress=unreadVariable \
+            --suppress=knownConditionTrueFalse \
+            --suppress=missingInclude \
+            --suppress=unmatchedSuppression \
+            --suppress=checkersReport \
+            --inline-suppr \
+            --quiet \
+            --error-exitcode=1 \
+            native/*.c native/*.h 2> target/cppcheck.txt || true
+
+          echo "=== CPPCHECK SUMMARY ==="
+          sed -i '/\[checkersReport\]/d' target/cppcheck.txt
+          if [ -s target/cppcheck.txt ]; then
+            echo "=== CPPCHECK FOUND ISSUES ==="
+            cat target/cppcheck.txt
+            exit 1
+          fi
+          echo "cppcheck passed cleanly."
+
+      - name: Upload Quality Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            target/coverage-report
+            target/cppcheck.txt
+            target/clang-tidy.log
+            target/coverage.info
+          retention-days: 30
+
+  # ====================== Windows (MinGW-w64 GCC) ======================
+  windows-mingw:
+    name: Windows - MinGW-w64 GCC - ${{ matrix.build_type }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [ Debug, Release ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Install MinGW-w64 dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: >-
+            curl
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+
+      - name: Install GMPMEE release asset
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          deps_prefix="${PWD}/.deps"
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/bin"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+          curl -fsSL "${GMPMEE_WINDOWS_URL}" -o "${deps_prefix}/bin/libgmpmee-1.dll"
+
+      - name: Maven package
+        shell: msys2 {0}
+        run: |
+          export CMAKE_PREFIX_PATH="${PWD}/.deps"
+          export PATH="${PWD}/.deps/bin:${PWD}/.deps/lib:${PATH}"
+          mvn -B package \
+            -Dcmake.build.type=${{ matrix.build_type }}
+
+      - name: Upload Maven artifacts
+        if: matrix.build_type == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmgj-windows-mingw
+          path: |
+            target/*.jar
+            target/classes/META-INF/native/**
+          retention-days: 30
