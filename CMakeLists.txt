@@ -109,9 +109,9 @@ add_custom_command(
     OUTPUT "${VMGJ_GENERATED_VMG_JAVA}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${VMGJ_GENERATED_PACKAGE_DIR}"
     COMMAND "${CMAKE_COMMAND}"
-            -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/src/java/com/verificatum/vmgj/VMG.magic"
-            -DOUTPUT_FILE="${VMGJ_GENERATED_VMG_JAVA}"
-            -DVMGJ_VERSION="${PROJECT_VERSION}"
+            -DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/src/java/com/verificatum/vmgj/VMG.magic
+            -DOUTPUT_FILE=${VMGJ_GENERATED_VMG_JAVA}
+            -DVMGJ_VERSION=${PROJECT_VERSION}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateVMGJava.cmake"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/java/com/verificatum/vmgj/VMG.magic"
@@ -124,9 +124,9 @@ add_custom_target(vmgj_generated_java DEPENDS "${VMGJ_GENERATED_VMG_JAVA}")
 add_custom_command(
     OUTPUT "${VMGJ_GENERATED_MANIFEST}"
     COMMAND "${CMAKE_COMMAND}"
-            -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/src/mf/MANIFEST.MF.src"
-            -DOUTPUT_FILE="${VMGJ_GENERATED_MANIFEST}"
-            -DVMGJ_VERSION="${PROJECT_VERSION}"
+            -DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/src/mf/MANIFEST.MF.src
+            -DOUTPUT_FILE=${VMGJ_GENERATED_MANIFEST}
+            -DVMGJ_VERSION=${PROJECT_VERSION}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateVMGJava.cmake"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/mf/MANIFEST.MF.src"
