@@ -1,0 +1,221 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: "25"
+  GMPMEE_VERSION: v3.0.0-b2
+  GMPMEE_HEADER_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/gmpmee.h
+  GMPMEE_LINUX_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.so.1
+  GMPMEE_MACOS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.1.dylib
+  GMPMEE_WINDOWS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee-1.dll
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            os: ubuntu-latest
+
+          - platform: macos-x86_64
+            os: macos-latest
+
+          - platform: windows-x64
+            os: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            curl \
+            libgmp-dev \
+            maven \
+            ninja-build \
+            python3
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew update
+          brew install cmake gmp maven ninja python
+
+      - name: Install MinGW-w64 dependencies (Windows)
+        if: startsWith(matrix.os, 'windows')
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          update: true
+          install: >-
+            curl
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+
+      - name: Install GMPMEE release asset (Unix)
+        if: "!startsWith(matrix.os, 'windows')"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deps_prefix="${RUNNER_TEMP}/vmgj-deps"
+          cmake_prefix="${deps_prefix}"
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/lib"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+
+          if [[ "${{ matrix.platform }}" == "macos-x86_64" ]]; then
+            gmp_prefix="$(brew --prefix gmp)"
+            curl -fsSL "${GMPMEE_MACOS_URL}" -o "${deps_prefix}/lib/libgmpmee.1.dylib"
+            ln -sf libgmpmee.1.dylib "${deps_prefix}/lib/libgmpmee.dylib"
+            cmake_prefix="${cmake_prefix}:${gmp_prefix}"
+          else
+            curl -fsSL "${GMPMEE_LINUX_URL}" -o "${deps_prefix}/lib/libgmpmee.so.1"
+            ln -sf libgmpmee.so.1 "${deps_prefix}/lib/libgmpmee.so"
+          fi
+
+          echo "CMAKE_PREFIX_PATH=${cmake_prefix}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
+          echo "DYLD_LIBRARY_PATH=${deps_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
+
+      - name: Install GMPMEE release asset (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          deps_prefix="${PWD}/.deps"
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/bin"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+          curl -fsSL "${GMPMEE_WINDOWS_URL}" -o "${deps_prefix}/bin/libgmpmee-1.dll"
+
+      - name: Maven package (Unix)
+        if: "!startsWith(matrix.os, 'windows')"
+        run: |
+          mvn -B package \
+            -Dcmake.build.type=Release
+
+      - name: Maven package (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: msys2 {0}
+        run: |
+          export CMAKE_PREFIX_PATH="${PWD}/.deps"
+          export PATH="${PWD}/.deps/bin:${PWD}/.deps/lib:${PATH}"
+          mvn -B package \
+            -Dcmake.build.type=Release
+
+      - name: Prepare named artifacts (Unix)
+        if: "!startsWith(matrix.os, 'windows')"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+
+          cp target/vmgj-*.jar "upload/vmgj-${{ github.ref_name }}-${{ matrix.platform }}.jar"
+
+          if [[ "${{ matrix.platform }}" == "linux-x86_64" ]]; then
+            lib="$(find target/cmake-build -maxdepth 3 \( -name 'libvmgj.so' -o -name 'libvmgj.so.*' \) | sort | head -n 1)"
+            if [[ -z "${lib}" ]]; then
+              echo "No Linux VMGJ shared library found."
+              find target/cmake-build -maxdepth 3 -type f -o -type l
+              exit 1
+            fi
+            cp -L "${lib}" "upload/libvmgj-${{ github.ref_name }}-linux-x86_64.so"
+          fi
+
+          if [[ "${{ matrix.platform }}" == "macos-x86_64" ]]; then
+            lib="$(find target/cmake-build -maxdepth 3 \( -name 'libvmgj.dylib' -o -name 'libvmgj.*.dylib' \) | sort | head -n 1)"
+            if [[ -z "${lib}" ]]; then
+              echo "No macOS VMGJ shared library found."
+              find target/cmake-build -maxdepth 3 -type f -o -type l
+              exit 1
+            fi
+            cp -L "${lib}" "upload/libvmgj-${{ github.ref_name }}-macos-x86_64.dylib"
+          fi
+
+      - name: Prepare named artifacts (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+
+          cp target/vmgj-*.jar "upload/vmgj-${{ github.ref_name }}-${{ matrix.platform }}.jar"
+
+          dll="$(find target/cmake-build -maxdepth 3 \( -name 'libvmgj.dll' -o -name 'vmgj.dll' -o -name 'libvmgj-1.dll' \) | sort | head -n 1)"
+          if [[ -z "${dll}" ]]; then
+            echo "No Windows VMGJ DLL found."
+            find target/cmake-build -maxdepth 3 -type f -o -type l
+            exit 1
+          fi
+          cp "${dll}" "upload/vmgj-${{ github.ref_name }}-windows-x64.dll"
+
+          implib="$(find target/cmake-build -maxdepth 3 \( -name 'libvmgj.dll.a' -o -name 'vmgj.lib' -o -name 'libvmgj.lib' \) | sort | head -n 1)"
+          if [[ -n "${implib}" ]]; then
+            cp "${implib}" "upload/vmgj-${{ github.ref_name }}-windows-x64.lib"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmgj-${{ matrix.platform }}
+          path: upload/
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: VMGJ ${{ github.ref_name }}
+          body: |
+            # VMGJ ${{ github.ref_name }}
+
+            Release build of Verificatum VMGJ.
+
+            Built with Java ${{ env.JAVA_VERSION }} and GMPMEE ${{ env.GMPMEE_VERSION }}.
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-b') || contains(github.ref_name, '-rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          files: |
+            artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
