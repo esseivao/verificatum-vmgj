@@ -60,9 +60,17 @@ find_path(GMPMEE_INCLUDE_DIR
     DOC "Directory containing gmpmee.h"
 )
 find_library(GMPMEE_LIBRARY
-    NAMES gmpmee libgmpmee
+    NAMES gmpmee libgmpmee libgmpmee-1
+    PATH_SUFFIXES lib bin
     DOC "GMPMEE library"
 )
+if(NOT GMPMEE_LIBRARY AND WIN32)
+    find_file(GMPMEE_LIBRARY
+        NAMES libgmpmee-1.dll gmpmee.dll
+        PATH_SUFFIXES bin lib
+        DOC "GMPMEE runtime library"
+    )
+endif()
 if(NOT GMPMEE_INCLUDE_DIR OR NOT GMPMEE_LIBRARY)
     message(FATAL_ERROR "GMPMEE not found. Set GMPMEE_INCLUDE_DIR and GMPMEE_LIBRARY.")
 endif()

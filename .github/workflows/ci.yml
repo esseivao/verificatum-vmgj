@@ -12,7 +12,11 @@ concurrency:
 
 env:
   JAVA_VERSION: "25"
-  GMPMEE_REPOSITORY: https://github.com/verificatum/verificatum-gmpmee.git
+  GMPMEE_VERSION: v3.0.0-b2
+  GMPMEE_HEADER_URL: https://raw.githubusercontent.com/esseivao/verificatum-gmpmee/v3.0.0-b2/gmpmee.h
+  GMPMEE_LINUX_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.so.1
+  GMPMEE_MACOS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee.1.dylib
+  GMPMEE_WINDOWS_URL: https://github.com/esseivao/verificatum-gmpmee/releases/download/v3.0.0-b2/libgmpmee-1.dll
 
 jobs:
   # ====================== Linux + macOS ======================
@@ -47,15 +51,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            autoconf \
-            automake \
             build-essential \
             clang \
             cmake \
-            git \
+            curl \
             libgmp-dev \
-            libtool \
-            m4 \
             maven \
             ninja-build \
             python3
@@ -64,29 +64,27 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew update
-          brew install autoconf automake cmake gmp libtool maven ninja python
+          brew install cmake gmp maven ninja python
 
-      - name: Build and install GMPMEE
+      - name: Install GMPMEE release asset
         shell: bash
         run: |
           set -euo pipefail
 
           deps_prefix="${RUNNER_TEMP}/vmgj-deps"
-          gmpmee_src="${RUNNER_TEMP}/gmpmee-src"
-
-          git clone --depth 1 "${GMPMEE_REPOSITORY}" "${gmpmee_src}"
-          cd "${gmpmee_src}"
-          autoreconf -fi
           cmake_prefix="${deps_prefix}"
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/lib"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+
           if [[ "${{ matrix.os }}" == macos* ]]; then
             gmp_prefix="$(brew --prefix gmp)"
-            export CPPFLAGS="-I${gmp_prefix}/include ${CPPFLAGS:-}"
-            export LDFLAGS="-L${gmp_prefix}/lib ${LDFLAGS:-}"
+            curl -fsSL "${GMPMEE_MACOS_URL}" -o "${deps_prefix}/lib/libgmpmee.1.dylib"
+            ln -sf libgmpmee.1.dylib "${deps_prefix}/lib/libgmpmee.dylib"
             cmake_prefix="${cmake_prefix}:${gmp_prefix}"
+          else
+            curl -fsSL "${GMPMEE_LINUX_URL}" -o "${deps_prefix}/lib/libgmpmee.so.1"
+            ln -sf libgmpmee.so.1 "${deps_prefix}/lib/libgmpmee.so"
           fi
-          CC="${{ matrix.compiler }}" ./configure --prefix="${deps_prefix}"
-          make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
-          make install
 
           echo "CMAKE_PREFIX_PATH=${cmake_prefix}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}" >> "${GITHUB_ENV}"
           echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
@@ -143,33 +141,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            autoconf \
-            automake \
             clang \
             clang-tidy \
             cmake \
             cppcheck \
-            git \
+            curl \
             lcov \
             libgmp-dev \
-            libtool \
-            m4 \
             maven \
             ninja-build \
             python3
 
-      - name: Build and install GMPMEE
+      - name: Install GMPMEE release asset
         shell: bash
         run: |
           set -euo pipefail
 
           deps_prefix="${RUNNER_TEMP}/vmgj-deps"
-          git clone --depth 1 "${GMPMEE_REPOSITORY}" "${RUNNER_TEMP}/gmpmee-src"
-          cd "${RUNNER_TEMP}/gmpmee-src"
-          autoreconf -fi
-          CC=clang ./configure --prefix="${deps_prefix}"
-          make -j"$(nproc)"
-          make install
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/lib"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+          curl -fsSL "${GMPMEE_LINUX_URL}" -o "${deps_prefix}/lib/libgmpmee.so.1"
+          ln -sf libgmpmee.so.1 "${deps_prefix}/lib/libgmpmee.so"
 
           echo "CMAKE_PREFIX_PATH=${deps_prefix}" >> "${GITHUB_ENV}"
           echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
@@ -290,12 +282,8 @@ jobs:
           msystem: MINGW64
           update: true
           install: >-
-            git
+            curl
             maven
-            autoconf
-            automake
-            libtool
-            m4
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-gmp
@@ -303,19 +291,15 @@ jobs:
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-python
 
-      - name: Build and install GMPMEE
+      - name: Install GMPMEE release asset
         shell: msys2 {0}
         run: |
           set -euo pipefail
 
           deps_prefix="${PWD}/.deps"
-          gmpmee_src="${PWD}/.gmpmee-src"
-          git clone --depth 1 "${GMPMEE_REPOSITORY}" "${gmpmee_src}"
-          cd "${gmpmee_src}"
-          autoreconf -fi
-          CC=gcc ./configure --prefix="${deps_prefix}"
-          make -j"$(nproc)"
-          make install
+          mkdir -p "${deps_prefix}/include" "${deps_prefix}/bin"
+          curl -fsSL "${GMPMEE_HEADER_URL}" -o "${deps_prefix}/include/gmpmee.h"
+          curl -fsSL "${GMPMEE_WINDOWS_URL}" -o "${deps_prefix}/bin/libgmpmee-1.dll"
 
       - name: Maven package
         shell: msys2 {0}
@@ -334,37 +318,3 @@ jobs:
             target/*.jar
             target/classes/META-INF/native/**
           retention-days: 30
-
-  # ====================== FreeBSD ======================
-  freebsd:
-    name: FreeBSD 15.0
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run on FreeBSD
-        uses: vmactions/freebsd-vm@v1
-        with:
-          release: "15.0"
-          envs: "GMPMEE_REPOSITORY"
-          usesh: true
-          prepare: |
-            pkg install -y autoconf automake cmake git gmake gmp libtool m4 maven ninja openjdk25 python3
-          run: |
-            export JAVA_HOME=/usr/local/openjdk25
-            export PATH="${JAVA_HOME}/bin:${PATH}"
-
-            deps_prefix="${RUNNER_TEMP:-/tmp}/vmgj-deps"
-            git clone --depth 1 "${GMPMEE_REPOSITORY}" /tmp/gmpmee-src
-            cd /tmp/gmpmee-src
-            autoreconf -fi
-            ./configure --prefix="${deps_prefix}"
-            gmake -j"$(sysctl -n hw.ncpu)"
-            gmake install
-            cd "${GITHUB_WORKSPACE}"
-
-            export CMAKE_PREFIX_PATH="${deps_prefix}"
-            export LD_LIBRARY_PATH="${deps_prefix}/lib:${LD_LIBRARY_PATH:-}"
-            mvn -B package
