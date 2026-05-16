@@ -47,11 +47,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            autoconf \
+            automake \
             build-essential \
             clang \
             cmake \
             git \
             libgmp-dev \
+            libtool \
+            m4 \
             maven \
             ninja-build \
             python3
@@ -60,7 +64,7 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew update
-          brew install cmake gmp maven ninja python
+          brew install autoconf automake cmake gmp libtool maven ninja python
 
       - name: Build and install GMPMEE
         shell: bash
@@ -69,29 +73,22 @@ jobs:
 
           deps_prefix="${RUNNER_TEMP}/vmgj-deps"
           gmpmee_src="${RUNNER_TEMP}/gmpmee-src"
-          gmpmee_build="${RUNNER_TEMP}/gmpmee-build"
 
           git clone --depth 1 "${GMPMEE_REPOSITORY}" "${gmpmee_src}"
-
-          cmake_args=(
-            -S "${gmpmee_src}"
-            -B "${gmpmee_build}"
-            -G Ninja
-            -DCMAKE_BUILD_TYPE=Release
-            -DBUILD_SHARED_LIBS=ON
-            -DCMAKE_INSTALL_PREFIX="${deps_prefix}"
-            -DCMAKE_C_COMPILER="${{ matrix.compiler }}"
-          )
-
+          cd "${gmpmee_src}"
+          autoreconf -fi
+          cmake_prefix="${deps_prefix}"
           if [[ "${{ matrix.os }}" == macos* ]]; then
-            cmake_args+=("-DCMAKE_PREFIX_PATH=$(brew --prefix gmp)")
+            gmp_prefix="$(brew --prefix gmp)"
+            export CPPFLAGS="-I${gmp_prefix}/include ${CPPFLAGS:-}"
+            export LDFLAGS="-L${gmp_prefix}/lib ${LDFLAGS:-}"
+            cmake_prefix="${cmake_prefix}:${gmp_prefix}"
           fi
+          CC="${{ matrix.compiler }}" ./configure --prefix="${deps_prefix}"
+          make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
+          make install
 
-          cmake "${cmake_args[@]}"
-          cmake --build "${gmpmee_build}"
-          cmake --install "${gmpmee_build}"
-
-          echo "CMAKE_PREFIX_PATH=${deps_prefix}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}" >> "${GITHUB_ENV}"
+          echo "CMAKE_PREFIX_PATH=${cmake_prefix}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}" >> "${GITHUB_ENV}"
           echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
           echo "DYLD_LIBRARY_PATH=${deps_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
 
@@ -146,6 +143,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            autoconf \
+            automake \
             clang \
             clang-tidy \
             cmake \
@@ -153,6 +152,8 @@ jobs:
             git \
             lcov \
             libgmp-dev \
+            libtool \
+            m4 \
             maven \
             ninja-build \
             python3
@@ -164,15 +165,11 @@ jobs:
 
           deps_prefix="${RUNNER_TEMP}/vmgj-deps"
           git clone --depth 1 "${GMPMEE_REPOSITORY}" "${RUNNER_TEMP}/gmpmee-src"
-          cmake -S "${RUNNER_TEMP}/gmpmee-src" \
-            -B "${RUNNER_TEMP}/gmpmee-build" \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX="${deps_prefix}" \
-            -DCMAKE_C_COMPILER=clang
-          cmake --build "${RUNNER_TEMP}/gmpmee-build"
-          cmake --install "${RUNNER_TEMP}/gmpmee-build"
+          cd "${RUNNER_TEMP}/gmpmee-src"
+          autoreconf -fi
+          CC=clang ./configure --prefix="${deps_prefix}"
+          make -j"$(nproc)"
+          make install
 
           echo "CMAKE_PREFIX_PATH=${deps_prefix}" >> "${GITHUB_ENV}"
           echo "LD_LIBRARY_PATH=${deps_prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" >> "${GITHUB_ENV}"
@@ -295,6 +292,10 @@ jobs:
           install: >-
             git
             maven
+            autoconf
+            automake
+            libtool
+            m4
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-gmp
@@ -307,23 +308,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          deps_prefix="${RUNNER_TEMP}/vmgj-deps"
-          git clone --depth 1 "${GMPMEE_REPOSITORY}" "${RUNNER_TEMP}/gmpmee-src"
-          cmake -S "${RUNNER_TEMP}/gmpmee-src" \
-            -B "${RUNNER_TEMP}/gmpmee-build" \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX="${deps_prefix}" \
-            -DCMAKE_C_COMPILER=gcc
-          cmake --build "${RUNNER_TEMP}/gmpmee-build"
-          cmake --install "${RUNNER_TEMP}/gmpmee-build"
+          deps_prefix="${PWD}/.deps"
+          gmpmee_src="${PWD}/.gmpmee-src"
+          git clone --depth 1 "${GMPMEE_REPOSITORY}" "${gmpmee_src}"
+          cd "${gmpmee_src}"
+          autoreconf -fi
+          CC=gcc ./configure --prefix="${deps_prefix}"
+          make -j"$(nproc)"
+          make install
 
       - name: Maven package
         shell: msys2 {0}
-        env:
-          CMAKE_PREFIX_PATH: ${{ runner.temp }}/vmgj-deps
         run: |
+          export CMAKE_PREFIX_PATH="${PWD}/.deps"
+          export PATH="${PWD}/.deps/bin:${PWD}/.deps/lib:${PATH}"
           mvn -B package \
             -Dcmake.build.type=${{ matrix.build_type }}
 
@@ -353,21 +351,19 @@ jobs:
           envs: "GMPMEE_REPOSITORY"
           usesh: true
           prepare: |
-            pkg install -y cmake git gmake gmp maven ninja openjdk25 python3
+            pkg install -y autoconf automake cmake git gmake gmp libtool m4 maven ninja openjdk25 python3
           run: |
             export JAVA_HOME=/usr/local/openjdk25
             export PATH="${JAVA_HOME}/bin:${PATH}"
 
             deps_prefix="${RUNNER_TEMP:-/tmp}/vmgj-deps"
             git clone --depth 1 "${GMPMEE_REPOSITORY}" /tmp/gmpmee-src
-            cmake -S /tmp/gmpmee-src \
-              -B /tmp/gmpmee-build \
-              -G Ninja \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_SHARED_LIBS=ON \
-              -DCMAKE_INSTALL_PREFIX="${deps_prefix}"
-            cmake --build /tmp/gmpmee-build
-            cmake --install /tmp/gmpmee-build
+            cd /tmp/gmpmee-src
+            autoreconf -fi
+            ./configure --prefix="${deps_prefix}"
+            gmake -j"$(sysctl -n hw.ncpu)"
+            gmake install
+            cd "${GITHUB_WORKSPACE}"
 
             export CMAKE_PREFIX_PATH="${deps_prefix}"
             export LD_LIBRARY_PATH="${deps_prefix}/lib:${LD_LIBRARY_PATH:-}"
