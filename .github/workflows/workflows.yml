@@ -10,14 +10,14 @@ permissions:
   contents: read
 
 jobs:
-  # ====================== Linux + macOS ======================
+  # ====================== Linux ======================
   unix:
     name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest ]
+        os: [ ubuntu-latest ]
         compiler: [ gcc, clang ]
         build_type: [ Debug, Release ]
         include:
@@ -35,8 +35,7 @@ jobs:
           distribution: temurin
           java-version: "11"
 
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential autoconf automake libtool m4 make git libgmp-dev
@@ -44,29 +43,10 @@ jobs:
             sudo apt-get install -y clang
           fi
 
-      - name: Install macOS dependencies
-        if: runner.os == 'macOS'
-        run: |
-          brew update
-          brew install autoconf automake libtool gmp
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            brew install gcc
-          fi
-          mkdir -p "$RUNNER_TEMP/gnubin"
-          ln -sf "$(brew --prefix libtool)/bin/glibtoolize" "$RUNNER_TEMP/gnubin/libtoolize"
-          echo "$RUNNER_TEMP/gnubin" >> "$GITHUB_PATH"
-          echo "CPPFLAGS=-I$(brew --prefix gmp)/include" >> "$GITHUB_ENV"
-          echo "GMP_LDFLAGS=-L$(brew --prefix gmp)/lib" >> "$GITHUB_ENV"
-
       - name: Select compiler and flags
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "macOS" ] && [ "${{ matrix.compiler }}" = "gcc" ]; then
-            cc_path="$(ls "$(brew --prefix)"/bin/gcc-[0-9]* | sort | tail -n 1)"
-            echo "CC=$cc_path" >> "$GITHUB_ENV"
-          else
-            echo "CC=${{ matrix.compiler }}" >> "$GITHUB_ENV"
-          fi
+          echo "CC=${{ matrix.compiler }}" >> "$GITHUB_ENV"
 
           if [ "${{ matrix.build_type }}" = "Debug" ]; then
             cflags="-O0 -g"
@@ -91,9 +71,7 @@ jobs:
           ./configure CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="${LDFLAGS:-}"
           make
           sudo make install
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            sudo ldconfig
-          fi
+          sudo ldconfig
 
       - name: Prepare native metadata
         run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
@@ -143,6 +121,7 @@ jobs:
             libtool
             m4
             make
+            python
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-gmp
 
@@ -222,7 +201,12 @@ jobs:
 
       - name: Build native C
         working-directory: native
-        run: make
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            make GMP_CFLAGS=""
+          else
+            make
+          fi
 
       - name: Check native C
         working-directory: native
@@ -241,7 +225,7 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y autoconf automake libtool gmp git gmake m4 openjdk11
+            pkg install -y autoconf automake libtool gmp git gmake m4 python openjdk11
           run: |
             export JAVA_HOME=/usr/local/openjdk11
             export PATH="$JAVA_HOME/bin:$PATH"
