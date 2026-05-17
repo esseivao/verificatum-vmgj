@@ -10,9 +10,177 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Ubuntu - GCC
-    runs-on: ubuntu-latest
+  # ====================== Linux + macOS ======================
+  unix:
+    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        compiler: [ gcc, clang ]
+        build_type: [ Debug, Release ]
+        include:
+          - os: ubuntu-latest
+            compiler: clang
+            build_type: Debug
+            sanitizer: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool m4 make git libgmp-dev
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          fi
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install autoconf automake libtool gmp
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            brew install gcc
+          fi
+          mkdir -p "$RUNNER_TEMP/gnubin"
+          ln -sf "$(brew --prefix libtool)/bin/glibtoolize" "$RUNNER_TEMP/gnubin/libtoolize"
+          echo "$RUNNER_TEMP/gnubin" >> "$GITHUB_PATH"
+          echo "CPPFLAGS=-I$(brew --prefix gmp)/include" >> "$GITHUB_ENV"
+          echo "GMP_LDFLAGS=-L$(brew --prefix gmp)/lib" >> "$GITHUB_ENV"
+
+      - name: Select compiler and flags
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ] && [ "${{ matrix.compiler }}" = "gcc" ]; then
+            cc_path="$(ls "$(brew --prefix)"/bin/gcc-[0-9]* | sort | tail -n 1)"
+            echo "CC=$cc_path" >> "$GITHUB_ENV"
+          else
+            echo "CC=${{ matrix.compiler }}" >> "$GITHUB_ENV"
+          fi
+
+          if [ "${{ matrix.build_type }}" = "Debug" ]; then
+            cflags="-O0 -g"
+          else
+            cflags="-O3"
+          fi
+
+          ldflags="${GMP_LDFLAGS:-}"
+          if [ "${{ matrix.sanitizer }}" = "true" ]; then
+            cflags="$cflags -fsanitize=address,undefined -fno-omit-frame-pointer"
+            ldflags="$ldflags -fsanitize=address,undefined"
+          fi
+
+          echo "CFLAGS=$cflags" >> "$GITHUB_ENV"
+          echo "LDFLAGS=$ldflags" >> "$GITHUB_ENV"
+
+      - name: Install GMPMEE
+        run: |
+          git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+          make -C ../verificatum-gmpmee -f Makefile.build
+          cd ../verificatum-gmpmee
+          ./configure CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="${LDFLAGS:-}"
+          make
+          sudo make install
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo ldconfig
+          fi
+
+      - name: Prepare native metadata
+        run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+
+      - name: Bootstrap native C
+        run: make -C native -f Makefile.build
+
+      - name: Configure native C
+        working-directory: native
+        run: ./configure CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="${LDFLAGS:-}"
+
+      - name: Build native C
+        working-directory: native
+        run: make
+
+      - name: Check native C
+        working-directory: native
+        run: make check
+
+  # ====================== Windows - MinGW-w64 GCC ======================
+  windows-mingw:
+    name: Windows - MinGW-w64 GCC
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            git
+            autoconf
+            automake
+            libtool
+            m4
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-gmp
+
+      - name: Install GMPMEE
+        run: |
+          git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+          make -C ../verificatum-gmpmee -f Makefile.build
+          cd ../verificatum-gmpmee
+          ./configure CC=gcc
+          make
+          make install
+
+      - name: Prepare native metadata
+        run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+
+      - name: Bootstrap native C
+        run: make -C native -f Makefile.build
+
+      - name: Configure native C
+        working-directory: native
+        run: ./configure CC=gcc
+
+      - name: Build native C
+        working-directory: native
+        run: make
+
+      - name: Check native C
+        working-directory: native
+        run: make check
+
+  # ====================== Ubuntu 32-bit legacy ======================
+  build-32bit-legacy:
+    name: ubuntu-22.04 32-bit - ${{ matrix.compiler }} - Release
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ gcc, clang ]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,27 +193,68 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y build-essential autoconf automake libtool m4 make git libgmp-dev
+          sudo apt-get install -y build-essential gcc-multilib libc6-dev-i386 autoconf automake libtool m4 make git libgmp-dev:i386
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          fi
 
       - name: Install GMPMEE
         run: |
           git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
           make -C ../verificatum-gmpmee -f Makefile.build
           cd ../verificatum-gmpmee
-          ./configure
+          ./configure CC="${{ matrix.compiler }}" CFLAGS="-m32 -O3" CPPFLAGS="-I/usr/include/i386-linux-gnu" LDFLAGS="-m32 -L/usr/lib/i386-linux-gnu"
           make
           sudo make install
           sudo ldconfig
 
-      - name: Bootstrap
-        run: make -f Makefile.build
+      - name: Prepare native metadata
+        run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
 
-      - name: Configure
-        run: ./configure
+      - name: Bootstrap native C
+        run: make -C native -f Makefile.build
 
-      - name: Build
+      - name: Configure native C
+        working-directory: native
+        run: ./configure CC="${{ matrix.compiler }}" CFLAGS="-m32 -O3" CPPFLAGS="-I/usr/include/i386-linux-gnu" LDFLAGS="-m32 -L/usr/lib/i386-linux-gnu"
+
+      - name: Build native C
+        working-directory: native
         run: make
 
-      - name: Test
+      - name: Check native C
+        working-directory: native
         run: make check
+
+  # ====================== FreeBSD ======================
+  freebsd:
+    name: FreeBSD 15.0
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.0"
+          usesh: true
+          prepare: |
+            pkg install -y autoconf automake libtool gmp git gmake m4 openjdk11
+          run: |
+            export JAVA_HOME=/usr/local/openjdk11
+            export PATH="$JAVA_HOME/bin:$PATH"
+            git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+            gmake -C ../verificatum-gmpmee -f Makefile.build
+            cd ../verificatum-gmpmee
+            ./configure CC=cc CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib"
+            gmake
+            gmake install
+            cd -
+            cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+            gmake -C native -f Makefile.build
+            cd native
+            ./configure CC=cc CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib"
+            gmake
+            gmake check
