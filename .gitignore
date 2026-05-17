@@ -1,0 +1,73 @@
+# Autotools / libtool generated files
+/aclocal.m4
+/autom4te.cache/
+/compile
+/config.guess
+/config.h
+/config.h.in
+/config.h.in~
+/config.log
+/config.status
+/config.sub
+/configure
+/depcomp
+/install-sh
+/libtool
+/ltmain.sh
+/missing
+/Makefile
+/Makefile.in
+/m4/
+/stamp-h1
+
+# CMake generated files
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/CTestTestfile.cmake
+/DartConfiguration.tcl
+/Testing/
+/install_manifest.txt
+
+# Generated source/data files
+/.build.bstamp
+/.trialdiv.bstamp
+/trialdiv_32.c
+/trialdiv_64.c
+/trialdiv_safe_32.c
+/trialdiv_safe_64.c
+/scriptmacros.m4
+/check_info.stamp
+
+# Build outputs
+/build*/
+/.deps/
+/.libs/
+*.o
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.dll
+*.dll.a
+*.exe
+
+# Generated helper/install outputs
+/bin/
+/gmpmee
+/gmpmee.exe
+/extract_GMP_CFLAGS
+/extract_GMP_CFLAGS.exe
+
+# Coverage and documentation outputs
+/api/
+/html_api/
+/coverage/
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+
+# Editor and backup files
+*~

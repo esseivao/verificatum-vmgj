@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ interop/jni-abi-fixes ]
+  pull_request:
+    branches: [ interop/jni-abi-fixes ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Ubuntu - GCC
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool m4 make git libgmp-dev
+
+      - name: Install GMPMEE
+        run: |
+          git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+          make -C ../verificatum-gmpmee -f Makefile.build
+          cd ../verificatum-gmpmee
+          ./configure
+          make
+          sudo make install
+          sudo ldconfig
+
+      - name: Bootstrap
+        run: make -f Makefile.build
+
+      - name: Configure
+        run: ./configure
+
+      - name: Build
+        run: make
+
+      - name: Test
+        run: make check
