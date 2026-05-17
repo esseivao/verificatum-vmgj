@@ -142,7 +142,10 @@ jobs:
 
       - name: Configure native C
         working-directory: native
-        run: ./configure CC=gcc
+        run: |
+          export JAVA_HOME="$(cygpath -u "$JAVA_HOME")"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          ./configure CC=gcc
 
       - name: Build native C
         working-directory: native
