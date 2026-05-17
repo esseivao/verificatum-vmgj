@@ -1,0 +1,251 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  # ====================== Linux ======================
+  unix:
+    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+        compiler: [ gcc, clang ]
+        build_type: [ Debug, Release ]
+        include:
+          - os: ubuntu-latest
+            compiler: clang
+            build_type: Debug
+            sanitizer: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool m4 make git libgmp-dev
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          fi
+
+      - name: Select compiler and flags
+        shell: bash
+        run: |
+          echo "CC=${{ matrix.compiler }}" >> "$GITHUB_ENV"
+
+          if [ "${{ matrix.build_type }}" = "Debug" ]; then
+            cflags="-O0 -g"
+          else
+            cflags="-O3"
+          fi
+
+          ldflags="${GMP_LDFLAGS:-}"
+          if [ "${{ matrix.sanitizer }}" = "true" ]; then
+            cflags="$cflags -fsanitize=address,undefined -fno-omit-frame-pointer"
+            ldflags="$ldflags -fsanitize=address,undefined"
+          fi
+
+          echo "CFLAGS=$cflags" >> "$GITHUB_ENV"
+          echo "LDFLAGS=$ldflags" >> "$GITHUB_ENV"
+
+      - name: Install GMPMEE
+        run: |
+          git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+          make -C ../verificatum-gmpmee -f Makefile.build
+          cd ../verificatum-gmpmee
+          ./configure CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="${LDFLAGS:-}"
+          make
+          sudo make install
+          sudo ldconfig
+
+      - name: Prepare native metadata
+        run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+
+      - name: Bootstrap native C
+        run: make -C native -f Makefile.build
+
+      - name: Configure native C
+        working-directory: native
+        run: ./configure CC="$CC" CFLAGS="$CFLAGS" LDFLAGS="${LDFLAGS:-}"
+
+      - name: Build native C
+        working-directory: native
+        run: make
+
+      - name: Check native C
+        working-directory: native
+        run: make check
+
+  # ====================== Windows - MinGW-w64 GCC ======================
+  windows-mingw:
+    name: Windows - MinGW-w64 GCC
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            git
+            autoconf
+            automake
+            libtool
+            m4
+            make
+            python
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-gmp
+
+      - name: Install GMPMEE
+        run: |
+          git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+          make -C ../verificatum-gmpmee -f Makefile.build
+          cd ../verificatum-gmpmee
+          ./configure CC=gcc
+          make
+          make install
+
+      - name: Prepare native metadata
+        run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+
+      - name: Bootstrap native C
+        run: make -C native -f Makefile.build
+
+      - name: Configure native C
+        working-directory: native
+        run: |
+          export JAVA_HOME="$(cygpath -u "$JAVA_HOME")"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          ./configure CC=gcc
+
+      - name: Build native C
+        working-directory: native
+        run: make
+
+      - name: Check native C
+        working-directory: native
+        run: make check
+
+  # ====================== Ubuntu 32-bit legacy ======================
+  build-32bit-legacy:
+    name: ubuntu-22.04 32-bit - ${{ matrix.compiler }} - Release
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [ gcc, clang ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Install dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-multilib libc6-dev-i386 autoconf automake libtool m4 make git libgmp-dev:i386
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          fi
+
+      - name: Install GMPMEE
+        run: |
+          git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+          make -C ../verificatum-gmpmee -f Makefile.build
+          cd ../verificatum-gmpmee
+          ./configure CC="${{ matrix.compiler }}" CFLAGS="-m32 -O3" CPPFLAGS="-I/usr/include/i386-linux-gnu" LDFLAGS="-m32 -L/usr/lib/i386-linux-gnu"
+          make
+          sudo make install
+          sudo ldconfig
+
+      - name: Prepare native metadata
+        run: cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+
+      - name: Bootstrap native C
+        run: make -C native -f Makefile.build
+
+      - name: Configure native C
+        working-directory: native
+        run: ./configure CC="${{ matrix.compiler }}" CFLAGS="-m32 -O3" CPPFLAGS="-I/usr/include/i386-linux-gnu" LDFLAGS="-m32 -L/usr/lib/i386-linux-gnu"
+
+      - name: Build native C
+        working-directory: native
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            make GMP_CFLAGS=""
+          else
+            make
+          fi
+
+      - name: Check native C
+        working-directory: native
+        run: make check
+
+  # ====================== FreeBSD ======================
+  freebsd:
+    name: FreeBSD 15.0
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.0"
+          usesh: true
+          prepare: |
+            pkg install -y autoconf automake libtool gmp git gmake m4 python openjdk25
+          run: |
+            export JAVA_HOME=/usr/local/openjdk25
+            mkdir -p "$GITHUB_WORKSPACE/.ci-bin"
+            printf '%s\n' '#!/bin/sh' 'if [ "${JAVAVM_DRYRUN:-}" = "yes" ]; then' '  echo "JAVA_HOME=$JAVA_HOME"' '  exit 0' 'fi' 'exec "$JAVA_HOME/bin/javac" "$@"' > "$GITHUB_WORKSPACE/.ci-bin/javac"
+            chmod +x "$GITHUB_WORKSPACE/.ci-bin/javac"
+            export PATH="$GITHUB_WORKSPACE/.ci-bin:$JAVA_HOME/bin:$PATH"
+            export C_INCLUDE_PATH="/usr/local/include:$JAVA_HOME/include:$JAVA_HOME/include/freebsd:${C_INCLUDE_PATH:-}"
+            git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
+            gmake -C ../verificatum-gmpmee -f Makefile.build
+            cd ../verificatum-gmpmee
+            ./configure CC=cc CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib"
+            gmake
+            gmake install
+            cd -
+            cp LICENSE NEWS README.md AUTHORS ChangeLog .macros.m4 .version.m4 native/
+            gmake -C native -f Makefile.build
+            cd native
+            ./configure CC=cc CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib"
+            gmake
+            gmake check
