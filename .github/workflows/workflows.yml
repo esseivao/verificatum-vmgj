@@ -33,7 +33,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "11"
+          java-version: "25"
 
       - name: Install dependencies
         run: |
@@ -107,7 +107,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "11"
+          java-version: "25"
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -168,7 +168,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "11"
+          java-version: "25"
 
       - name: Install dependencies
         run: |
@@ -225,10 +225,14 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y autoconf automake libtool gmp git gmake m4 python openjdk11
+            pkg install -y autoconf automake libtool gmp git gmake m4 python openjdk25
           run: |
-            export JAVA_HOME=/usr/local/openjdk11
-            export PATH="$JAVA_HOME/bin:$PATH"
+            export JAVA_HOME=/usr/local/openjdk25
+            mkdir -p "$GITHUB_WORKSPACE/.ci-bin"
+            printf '%s\n' '#!/bin/sh' 'if [ "${JAVAVM_DRYRUN:-}" = "yes" ]; then' '  echo "JAVA_HOME=$JAVA_HOME"' '  exit 0' 'fi' 'exec "$JAVA_HOME/bin/javac" "$@"' > "$GITHUB_WORKSPACE/.ci-bin/javac"
+            chmod +x "$GITHUB_WORKSPACE/.ci-bin/javac"
+            export PATH="$GITHUB_WORKSPACE/.ci-bin:$JAVA_HOME/bin:$PATH"
+            export C_INCLUDE_PATH="/usr/local/include:$JAVA_HOME/include:$JAVA_HOME/include/freebsd:${C_INCLUDE_PATH:-}"
             git clone --depth 1 --branch interop/jni-abi-fixes https://github.com/esseivao/verificatum-gmpmee.git ../verificatum-gmpmee
             gmake -C ../verificatum-gmpmee -f Makefile.build
             cd ../verificatum-gmpmee
