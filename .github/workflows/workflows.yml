@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ interop/jni-abi-fixes ]
+    branches: [ master ]
   pull_request:
-    branches: [ interop/jni-abi-fixes ]
+    branches: [ master ]
 
 permissions:
   contents: read
